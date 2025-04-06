@@ -1,8 +1,42 @@
 
+感谢原项目作者的开源分享，本项目参考原项目进行了一定的简化，优化了UI，升级了部分功能，更适合初学者进行项目开发与理解
+https://github.com/YaoFANGUK/video-subtitle-remover?tab=readme-ov-file
 
+本项目目前只在windows环境测试能用，其他环境没测试过，大家有问题可以进qq群沟通
+QQ群：  1036028422
+
+我测试环境：
+windows10 
+Python 版本: 3.12.3
+torch 版本: 2.6.0+cu126
+
+
+核心功能点:
+1、只使用sttn算法去字幕
+2、可以通过鼠标进行字幕区域选择
+3、使用了qt作为UI页面
+
+运行命令：
+1、cd path/to/my_project
+2、python -m venv myenv
+3、myenv\Scripts\activate
+4、
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 pip install opencv-python  -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install matplotlib  -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install PyQt5  -i https://pypi.tuna.tsinghua.edu.cn/simple
 
+#用来把原始视频里面的音频文件合并到目标文件中去，可以用ffmpeg代替
+pip install moviepy  -i https://pypi.tuna.tsinghua.edu.cn/simple
 
+5、python main.py
+
+
+
+注意：
+不要选择包含中文的路径
+
+
+
+pyinstaller --windowed --onefile --add-data="models/sttn/*;models/sttn" main.py
+pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" main.py

@@ -1,11 +1,21 @@
 
 
-import torch
+from torch import cuda ,device
 import os
+from enum import Enum, unique
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+
+# 视频输出路径, 如果不设置，那默认就是原视频的路径
+#VIDEO_OUT_FOLDER = r"F:\AI\lama\test_images"
+VIDEO_OUT_FOLDER = None
+
+device = device("cuda:0" if cuda.is_available() else "cpu")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STTN_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'sttn', 'infer_model.pth')
+VIDEO_INPAINT_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'video')
+LAMA_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'big-lama')
 
 """
 4. STTN_MAX_LOAD_NUM
@@ -23,4 +33,18 @@ STTN_MAX_LOAD_NUM = 50
 if STTN_MAX_LOAD_NUM < STTN_REFERENCE_LENGTH * STTN_NEIGHBOR_STRIDE:
     STTN_MAX_LOAD_NUM = STTN_REFERENCE_LENGTH * STTN_NEIGHBOR_STRIDE
 # ×××××××××× InpaintMode.STTN算法设置 end ××××××××××
+
+
+ 
+@unique
+class InpaintMode(Enum):
+    """
+    图像重绘算法枚举
+    """
+    STTN = 'sttn'
+    LAMA = 'lama'
+    PROPAINTER = 'propainter'
+
+INPAINT_MODE = InpaintMode.STTN
+
 

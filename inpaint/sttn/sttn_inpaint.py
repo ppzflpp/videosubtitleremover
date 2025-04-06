@@ -22,6 +22,7 @@ _to_tensors = transforms.Compose([
 
 
 class STTNInpaint:
+
     def __init__(self):
         self.device = config.device
         # 1. 创建InpaintGenerator模型实例并装载到选择的设备上
@@ -235,22 +236,18 @@ class STTNVideoInpaint:
         # 返回视频读取对象、帧信息和视频写入对象
         return reader, frame_info
 
-    def __init__(self, video_path, mask_path=None, clip_gap=None):
+    def __init__(self, video_path,video_out_path, mask_path=None, callback=None):
         # STTNInpaint视频修复实例初始化
         self.sttn_inpaint = STTNInpaint()
         # 视频和掩码路径
         self.video_path = video_path
         self.mask_path = mask_path
+        self.callback = callback
         # 设置输出视频文件的路径
-        self.video_out_path = os.path.join(
-            os.path.dirname(os.path.abspath(self.video_path)),
-            f"{os.path.basename(self.video_path).rsplit('.', 1)[0]}_no_sub.mp4"
-        )
-        # 配置可在一次处理中加载的最大帧数
-        if clip_gap is None:
-            self.clip_gap = config.STTN_MAX_LOAD_NUM
-        else:
-            self.clip_gap = clip_gap
+        self.video_out_path = video_out_path
+
+        self.clip_gap = config.STTN_MAX_LOAD_NUM
+
 
     def __call__(self, input_mask=None, input_sub_remover=None, tbar=None):
         # 读取视频帧信息
@@ -277,6 +274,10 @@ class STTNVideoInpaint:
             start_f = i * self.clip_gap  # 起始帧位置
             end_f = min((i + 1) * self.clip_gap, frame_info['len'])  # 结束帧位置
             print('Processing:', start_f + 1, '-', end_f, ' / Total:', frame_info['len'])
+            
+            if self.callback:
+                self.callback(int(100 * float(i) / float(rec_time)))
+
             frames_hr = []  # 高分辨率帧列表
             frames = {}  # 帧字典，用于存储裁剪后的图像
             comps = {}  # 组合字典，用于存储修复后的图像
