@@ -34,9 +34,15 @@ pip install moviepy  -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 
 注意：
-不要选择包含中文的路径
+1、视频所在路径不要包含中文，并且视频名字也不能包含中文
+2、由于模型文件超过100M直接传不上来，需要单独下载模型文件放到model文件夹下，我都放到百度网盘了。下载的model文件夹直接覆盖目前github代码里面的model文件夹即可
+3、如果有朋友使用exe，可以直接从百度网盘下载
 
 
 
-pyinstaller --windowed --onefile --add-data="models/sttn/*;models/sttn" main.py
+
+
+
+
+pyinstaller --windowed --onefile --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" main.py
 pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" main.py
