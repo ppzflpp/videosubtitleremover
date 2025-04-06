@@ -313,7 +313,7 @@ class VideoProcessor(QMainWindow):
         
         # 按钮区域
         button_area = QVBoxLayout()
-        button_area.setContentsMargins(100, 0, 100, 0)
+        button_area.setContentsMargins(0, 0, 0, 0)
         
         self.open_btn = QPushButton("打开视频")
         self.open_btn.clicked.connect(self.open_video)
@@ -324,8 +324,6 @@ class VideoProcessor(QMainWindow):
             }
         """)
         button_area.addWidget(self.open_btn)
-        print("初始化完成，测试按钮状态：") 
-        print("打开按钮 enabled:", self.open_btn.isEnabled())  # 应为True
 
         self.play_btn = QPushButton("播放")
         self.play_btn.clicked.connect(self.toggle_play)
