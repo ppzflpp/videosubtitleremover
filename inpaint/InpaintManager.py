@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 import config
 from inpaint.sttn.sttn_inpaint import STTNVideoInpaint as STTN_PROCESSOR 
 from inpaint.lama.lama_inpaint import LamaInpaint as LAMA_PROCESSOR
-from inpaint.proinpainter.pro_inpaint import ProInpaint as PROINPAINTER_PROCESSOR
+from inpaint.propainter.propainter import ProPainter as PROPAINTER_PROCESSOR
 
 
 from moviepy import VideoFileClip, AudioFileClip
@@ -51,7 +51,7 @@ class InpaintManager:
                 self.replace_audio_of_b(self.video_path,self.video_out_path)
                 return
             case config.InpaintMode.PROPAINTER:
-                processor = PROINPAINTER_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
+                processor = PROPAINTER_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
                 processor()
                 self.replace_audio_of_b(self.video_path,self.video_out_path)
                 return

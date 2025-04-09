@@ -25,6 +25,9 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install opencv-python  -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install matplotlib  -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install PyQt5  -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install scipy -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install einops -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install av -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 #用来把原始视频里面的音频文件合并到目标文件中去，可以用ffmpeg代替
 pip install moviepy  -i https://pypi.tuna.tsinghua.edu.cn/simple
@@ -44,5 +47,5 @@ pip install moviepy  -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 
 
-pyinstaller --windowed --onefile --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" main.py
+pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" main.py
 pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" main.py

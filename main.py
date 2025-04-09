@@ -4,7 +4,7 @@ import sys
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint,QSize,QSettings,QThread, pyqtSignal
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QPushButton, QProgressBar, QFileDialog, 
-                            QLabel, QFrame, QSizePolicy, QSlider, QSizeGrip,QMessageBox,QStackedWidget,QGroupBox,QRadioButton)
+                            QLabel, QFrame, QSizePolicy, QSlider, QSizeGrip,QMessageBox,QStackedWidget,QGroupBox,QRadioButton,QSpacerItem)
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QMouseEvent, QColor,QFont
 import cv2
 import numpy as np
@@ -69,8 +69,8 @@ class VideoFrame(QLabel):
         self.start_pos = QPoint()
         self.current_frame = None
         self.scale_factor = 1.0
-        self.setMinimumSize(800, 600)
-        self.resize(1200, 800)
+        self.setMinimumSize(500, 800)
+        self.resize(500, 800)
         self.video_path = None
         self.video_cap = None
         self.frame_count = 0
@@ -202,7 +202,7 @@ class VideoProcessor(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("视频去字幕工具")
-        self.setGeometry(500, 500, 1000, 1000) 
+        self.setGeometry(500, 500, 500, 800) 
         self.settings = QSettings("VideoSubTitleRemover", "dragon")
         self.last_opened_path = self.settings.value("last_opened_path", "")
         self.video_path = None
@@ -299,20 +299,56 @@ class VideoProcessor(QMainWindow):
         """首页UI - 原有内容移到这里"""
         self.home_widget.setAttribute(Qt.WA_StyledBackground)  # ← 新增
         layout = QVBoxLayout(self.home_widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
+        layout.setContentsMargins(50, 50, 50, 50)
         
         # 视频帧区域
         video_area = QHBoxLayout()
-        video_area.setContentsMargins(20, 20, 20, 20)
+        video_area.setContentsMargins(0, 0, 0, 0)
         video_area.setSpacing(20)
         
         # 原始视频
         self.original_video = VideoFrame(parent=self)
         video_area.addWidget(self.original_video)
         
-        # 按钮区域
-        button_area = QVBoxLayout()
+        
+        # 处理后视频
+        self.processed_video = VideoFrame(parent=self)
+        video_area.addWidget(self.processed_video)
+        
+        layout.addLayout(video_area)
+
+        
+        # 进度标签和滑块
+        self.progress_label = QLabel("00:00:00 / 00:00:00")
+        layout.addWidget(self.progress_label,alignment=Qt.AlignmentFlag.AlignCenter)
+        self.progress_slider = QSlider(Qt.Horizontal)
+        self.progress_slider.setStyleSheet("""
+                QSlider::groove:horizontal {
+                    height: 8px;
+                    background: #ddd;  /* 未滑过区域颜色 */
+                }
+                QSlider::sub-page:horizontal {
+                    background: #3396ff;  /* 已滑过区域颜色（绿色） */
+                }
+                QSlider::handle:horizontal {
+                    width: 12px;          /* 圆形直径 */
+                    height: 18px;         /* 圆形直径 */
+                    margin: -4px 0;       /* 垂直居中 */
+                    background: #3396FF;  /* 直接填充为边框颜色（无白色背景） */
+                    border: none;        /* 移除边框 */
+                }
+            """)
+        self.progress_slider.sliderPressed.connect(self.slider_pressed)
+        self.progress_slider.sliderReleased.connect(self.slider_released)
+        self.progress_slider.sliderMoved.connect(self.seek_video)
+        self.progress_slider.setEnabled(False)
+        layout.addWidget(self.progress_slider)
+
+        spacer = QSpacerItem(50, 50, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        layout.addSpacerItem(spacer)
+
+          # 按钮区域
+        button_area = QHBoxLayout()
         button_area.setContentsMargins(0, 0, 0, 0)
         
         self.open_btn = QPushButton("打开视频")
@@ -344,24 +380,10 @@ class VideoProcessor(QMainWindow):
             }
         """)
         button_area.addWidget(self.process_btn)
-        
-        video_area.addLayout(button_area)
-        
-        # 处理后视频
-        self.processed_video = VideoFrame(parent=self)
-        video_area.addWidget(self.processed_video)
-        
-        layout.addLayout(video_area)
-        
-        # 进度标签和滑块
-        self.progress_label = QLabel("00:00:00 / 00:00:00")
-        layout.addWidget(self.progress_label)
-        self.progress_slider = QSlider(Qt.Horizontal)
-        self.progress_slider.sliderPressed.connect(self.slider_pressed)
-        self.progress_slider.sliderReleased.connect(self.slider_released)
-        self.progress_slider.sliderMoved.connect(self.seek_video)
-        self.progress_slider.setEnabled(False)
-        layout.addWidget(self.progress_slider)
+        layout.addLayout(button_area)
+
+        spacer = QSpacerItem(50, 50, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        layout.addSpacerItem(spacer)
         
         # 处理进度条
         self.progress_bar = QProgressBar()
@@ -371,6 +393,7 @@ class VideoProcessor(QMainWindow):
             }
         """)
         self.progress_bar.setRange(0, 100)
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.progress_bar)
         
         # 初始化控件状态
@@ -401,19 +424,24 @@ class VideoProcessor(QMainWindow):
         """)
         algo_layout = QVBoxLayout()
         
-        self.radio_sttn = QRadioButton("STTN模型")
-        self.radio_lama = QRadioButton("LAMA模型")
-        self.radio_lama.setChecked(True)  # 默认选择LAMA
+        self.radio_sttn = QRadioButton("Sttn模型")
+        self.radio_propainter = QRadioButton("ProPainter模型")
+        self.radio_lama = QRadioButton("Lama模型")
+        
+        self.radio_sttn.setChecked(True)  # 默认选择sttn
+        self.set_inpaint_mode(config.InpaintMode.STTN)
         
         # 添加单选按钮
         algo_layout.addWidget(self.radio_sttn)
+        algo_layout.addWidget(self.radio_propainter)
         algo_layout.addWidget(self.radio_lama)
         algo_layout.addSpacing(15)
         
         # 算法说明
         algo_desc = QLabel(
-            "STTN: 适合处理动态字幕\n"
-            "LAMA: 适合静态字幕和复杂背景修复"
+            "Sttn: 适合处理动态字幕\n"
+            "Propainter: 适合处理动态字幕\n"
+            "Lama: 适合静态字幕和复杂背景修复（推荐图片处理）"
         )
         algo_desc.setStyleSheet("color: #666; font-size: 16px;")
         algo_layout.addWidget(algo_desc)
@@ -422,9 +450,13 @@ class VideoProcessor(QMainWindow):
         layout.addWidget(algo_group)
         
         # 连接信号
-        self.radio_sttn.toggled.connect(
+        self.radio_sttn.clicked.connect(
             lambda: self.set_inpaint_mode(config.InpaintMode.STTN))
-        self.radio_lama.toggled.connect(
+
+        self.radio_propainter.clicked.connect(
+            lambda: self.set_inpaint_mode(config.InpaintMode.PROPAINTER))
+
+        self.radio_lama.clicked.connect(
             lambda: self.set_inpaint_mode(config.InpaintMode.LAMA))
         
         layout.addStretch()

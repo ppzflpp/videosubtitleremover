@@ -21,13 +21,10 @@ class LamaInpaint:
         # 设置输出视频文件的路径
         self.video_out_path = video_out_path
         self.device = config.device
-        model_path = os.path.join(config.LAMA_MODEL_PATH, 'big-lama.pt')
+        model_path = os.path.join(config.LAMA_MODEL_PATH)
         self.model = torch.jit.load(model_path, map_location=self.device)
         self.model.eval()
         self.model.to(self.device)
-        print("LAMA:video_path ",self.video_path)
-        print("LAMA:video_out_path ",self.video_out_path)
-        print("LAMA:mask_path ",self.mask_path)
 
 
     def __call__(self):
