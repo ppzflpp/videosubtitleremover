@@ -41,7 +41,7 @@ class ProPainter:
         parser.add_argument(
             '-o', '--output', type=str, default='results', help='Output folder. Default: results')
         parser.add_argument(
-            "--resize_ratio", type=float, default=1, help='Resize scale for processing video.')
+            "--resize_ratio", type=float, default=0.5, help='Resize scale for processing video.')
         parser.add_argument(
             '--height', type=int, default=-1, help='Height of the processing video.')
         parser.add_argument(
@@ -49,9 +49,9 @@ class ProPainter:
         parser.add_argument(
             '--mask_dilation', type=int, default=4, help='Mask dilation for video and flow masking.')
         parser.add_argument(
-            "--ref_stride", type=int, default=10, help='Stride of global reference frames.')
+            "--ref_stride", type=int, default=20, help='Stride of global reference frames.')
         parser.add_argument(
-            "--neighbor_length", type=int, default=10, help='Length of local neighboring frames.')
+            "--neighbor_length", type=int, default=5, help='Length of local neighboring frames.')
         parser.add_argument(
             "--subvideo_length", type=int, default=20, help='Length of sub-video for long video inference.')
         parser.add_argument(
@@ -138,7 +138,7 @@ class ProPainter:
         model = InpaintGenerator(model_path=config.PROPAINTER_MODEL_PATH).to(device)
         model.eval()
 
-        
+        self.callback(2)
         ##############################################
         # ProPainter inference
         ##############################################
@@ -259,9 +259,14 @@ class ProPainter:
             ref_num = args.subvideo_length // args.ref_stride
         else:
             ref_num = -1
-        
+
+        self.callback(10)
         # ---- feature propagation + transformer ----
         for f in tqdm(range(0, video_length, neighbor_stride)):
+
+            if self.callback:
+                self.callback(int(100 * float(f) / float(video_length)))
+
             neighbor_ids = [
                 i for i in range(max(0, f - neighbor_stride),
                                     min(video_length, f + neighbor_stride + 1))
@@ -319,7 +324,7 @@ class ProPainter:
         imageio.mimwrite(self.video_out_path, comp_frames, fps=fps, quality=7)
         
         print(f'\nAll results are saved in {self.video_out_path}')
-        
+        self.callback(100)
         torch.cuda.empty_cache()
 
     def imwrite(self,img, file_path, params=None, auto_mkdir=True):

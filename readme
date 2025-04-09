@@ -9,12 +9,15 @@ QQ群：  1036028422
 windows10 
 Python 版本: 3.12.3
 torch 版本: 2.6.0+cu126
+显卡：N卡 1660S 6G
 
 
 核心功能点:
-1、只使用sttn算法去字幕
+1、支持LAMA，STTN，PROPAINTER 3种算法
 2、可以通过鼠标进行字幕区域选择
 3、使用了qt作为UI页面
+4、去字幕推荐使用STTN
+
 
 运行命令：
 1、cd path/to/my_project
@@ -39,7 +42,18 @@ pip install moviepy  -i https://pypi.tuna.tsinghua.edu.cn/simple
 注意：
 1、视频所在路径不要包含中文，并且视频名字也不能包含中文
 2、由于模型文件超过100M直接传不上来，需要单独下载模型文件放到model文件夹下，我都放到百度网盘了。下载的model文件夹直接覆盖目前github代码里面的model文件夹即可
+
 3、如果有朋友使用exe，可以直接从百度网盘下载
+https://pan.baidu.com/s/1L1Hgc4kU9JXqbkFHNssQog?pwd=25ft 提取码: 25ft
+
+4、propainter 算法比较吃显存，如果出现OOM,可以调整 inpaint/propainter/propainter.py 里面的如下参数
+--neighbor_length   默认10，可以调低
+--ref_stride  默认10，可以调高
+--subvideo_length  默认值80，可以降低
+--resize_ratio  默认10，可以调低
+这4个参数可以只调一个或者多个，看自己电脑的实际运行情况测试
+
+
 
 
 
