@@ -299,7 +299,7 @@ class VideoProcessor(QMainWindow):
         """首页UI - 原有内容移到这里"""
         self.home_widget.setAttribute(Qt.WA_StyledBackground)  # ← 新增
         layout = QVBoxLayout(self.home_widget)
-        layout.setContentsMargins(50, 50, 50, 50)
+        layout.setContentsMargins(50, 50, 50,10)
         
         # 视频帧区域
         video_area = QHBoxLayout()
@@ -395,6 +395,20 @@ class VideoProcessor(QMainWindow):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.progress_bar)
+
+        #弹簧
+        layout.addStretch(1)
+
+        # 显示环境控件 - 现在会固定在底部
+        environmentString = f"Python 版本: {platform.python_version()}" \
+                f"     torch 版本: {torch.__version__}," \
+                f"     是否支持CUDA: {torch.cuda.is_available()}"
+        self.environmentLabel = QLabel(environmentString)
+        font = QFont()
+        font.setPointSize(6)
+        self.environmentLabel.setFont(font)
+
+        layout.addWidget(self.environmentLabel)
         
         # 初始化控件状态
         self.play_btn.setEnabled(False)
