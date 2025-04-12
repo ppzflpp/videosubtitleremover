@@ -83,3 +83,19 @@ def get_clicked_point(img_path):
     cv2.destroyAllWindows()
 
     return last_point
+
+
+def read_image_with_chinese_path(path, flag=cv2.IMREAD_GRAYSCALE):
+    with open(path, "rb") as f:
+        buffer = np.frombuffer(f.read(), dtype=np.uint8)
+    image = cv2.imdecode(buffer, flag)
+    return image
+
+def save_image_with_chinese_path(image, save_path):
+    success, buffer = cv2.imencode(".png", image) 
+    if success:
+        with open(save_path, "wb") as f:
+            f.write(buffer.tobytes())
+        return True
+    else:
+        return False

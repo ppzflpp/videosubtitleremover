@@ -1,9 +1,9 @@
 build/*
 dist/*
-__pycache__/
-inpaint/utils/__pycache__/*
 main.spec
 models/*
 readme.zip
 videoRemover/*
-inpaint/lama/__pycache__/*
+**/__pycache__/ 
+*.py[cod]
+*$py.class

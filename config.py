@@ -5,12 +5,6 @@ import os
 from enum import Enum, unique
 
 
-
-
-# 视频输出路径, 如果不设置，那默认就是原视频的路径
-#VIDEO_OUT_FOLDER = r"F:\AI\lama\test_images"
-VIDEO_OUT_FOLDER = None
-
 device = device("cuda:0" if cuda.is_available() else "cpu")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STTN_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'sttn', 'infer_model.pth')

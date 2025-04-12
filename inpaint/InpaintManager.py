@@ -19,15 +19,18 @@ from moviepy import VideoFileClip, AudioFileClip
 
 
 class InpaintManager:
-    def __init__(self, video_path, mask_path,mode=config.InpaintMode.STTN,callback=None) -> None:
+    def __init__(self, video_path, save_folder, mask_path, mode=config.InpaintMode.STTN, callback=None) -> None:
         self.video_path = video_path
+        self.save_folder = save_folder
         self.mask_path = mask_path
         self.callback = callback
         self.mode = mode
 
         # 设置输出视频文件的路径
-        if config.VIDEO_OUT_FOLDER:
-            self.video_out_path = os.path.join(config.VIDEO_OUT_FOLDER,"",
+        if save_folder:  # 需求2：如果save_folder不为空，则优先使用它
+            os.makedirs(save_folder, exist_ok=True)  # 自动创建路径
+            self.video_out_path = os.path.join(
+                save_folder,
                 f"{os.path.basename(self.video_path).rsplit('.', 1)[0]}_no_sub.mp4"
             )
         else:  
@@ -39,22 +42,20 @@ class InpaintManager:
 
     def __call__(self):
         print("当前使用模型：",self.mode)
-        match self.mode:
-            case config.InpaintMode.STTN:
-                processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
-                processor()
-                self.replace_audio_of_b(self.video_path,self.video_out_path)
-                return
-            case config.InpaintMode.LAMA:
-                processor = LAMA_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
-                processor()
-                self.replace_audio_of_b(self.video_path,self.video_out_path)
-                return
-            case config.InpaintMode.PROPAINTER:
-                processor = PROPAINTER_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
-                processor()
-                self.replace_audio_of_b(self.video_path,self.video_out_path)
-                return
+
+        processor = None
+        if self.mode.upper() == config.InpaintMode.STTN.value.upper():
+            processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
+        elif self.mode.upper() == config.InpaintMode.LAMA.value.upper() :
+            processor = LAMA_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
+        elif self.mode.upper() == config.InpaintMode.PROPAINTER.value.upper():
+            processor = PROPAINTER_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
+        else :
+            processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
+
+
+        processor()
+        self.replace_audio_of_b(self.video_path,self.video_out_path)
 
     
     def replace_audio_of_b(self,video_a_path, video_b_path):

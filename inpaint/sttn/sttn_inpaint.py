@@ -14,6 +14,8 @@ import config
 from inpaint.sttn.auto_sttn import InpaintGenerator
 from inpaint.utils.sttn_utils import Stack, ToTorchFormatTensor
 
+from inpaint.utils.utils import read_image_with_chinese_path
+
 # 定义图像预处理方式
 _to_tensors = transforms.Compose([
     Stack(),  # 将图像堆叠为序列
@@ -93,7 +95,7 @@ class STTNInpaint:
 
     @staticmethod
     def read_mask(path):
-        img = cv2.imread(path, 0)
+        img = read_image_with_chinese_path(path)
         # 转为binary mask
         ret, img = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY)
         img = img[:, :, None]

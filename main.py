@@ -4,7 +4,7 @@ import sys
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint,QSize,QSettings,QThread, pyqtSignal
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QPushButton, QProgressBar, QFileDialog, 
-                            QLabel, QFrame, QSizePolicy, QSlider, QSizeGrip,QMessageBox,QStackedWidget,QGroupBox,QRadioButton,QSpacerItem)
+                            QLabel, QFrame, QSizePolicy, QSlider, QSizeGrip,QMessageBox,QStackedWidget,QGroupBox,QRadioButton,QSpacerItem,QLineEdit)
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QMouseEvent, QColor,QFont
 import cv2
 import numpy as np
@@ -14,15 +14,17 @@ import time
 from inpaint.InpaintManager import InpaintManager
 
 import config
+from  inpaint.utils.utils import save_image_with_chinese_path
 
 class VideoProcessingThread(QThread):
     """处理视频的线程"""
     finished = pyqtSignal(str, int,int)  # 定义信号，用于通知主线程处理完成
 
-    def __init__(self,parent, video_path, mask_path,mode):
+    def __init__(self,parent, video_path, save_folder,mask_path,mode):
         super().__init__()
         self.video_processor = parent
         self.video_path = video_path
+        self.save_folder = save_folder
         self.mask_path = mask_path
         self.mode = mode
     
@@ -34,6 +36,15 @@ class VideoProcessingThread(QThread):
             progress = 1
 
         self.finished.emit(None,-1,progress)
+
+    def clean_up(self):
+        #删除遮罩文件
+        if os.path.exists(self.mask_path):
+            try:
+                os.remove(self.mask_path)
+                print(f"已删除文件: {self.mask_path}")
+            except OSError as e:
+                print(f"删除文件 {self.mask_path} 失败: {e}")
     
 
     def run(self):
@@ -42,8 +53,9 @@ class VideoProcessingThread(QThread):
         start = time.time()
         print("VideoProcessingThread....")
         # 模拟耗时操作
-        manager = InpaintManager(self.video_path, self.mask_path,mode=self.mode,callback=self.update)
+        manager = InpaintManager(self.video_path, self.save_folder,self.mask_path,mode=self.mode,callback=self.update)
         manager()
+        self.clean_up()
         
         # 记录结束时间
         time_cost = int(time.time() - start)
@@ -191,12 +203,14 @@ class VideoFrame(QLabel):
             print(f"文件名没有有效的扩展名: {mask_path}")
             return
 
-        # 保存蒙版图
-        if cv2.imwrite(mask_path, mask):
+
+        success = save_image_with_chinese_path(mask,mask_path)
+        if success:
             self.videoProcessor.mask_path = mask_path
             print(f"蒙版图已成功保存到: {mask_path}")
-        else:
+        else : 
             print(f"保存蒙版图失败: {mask_path}")
+
 
 class VideoProcessor(QMainWindow):
     def __init__(self):
@@ -205,10 +219,14 @@ class VideoProcessor(QMainWindow):
         self.setGeometry(500, 500, 500, 800) 
         self.settings = QSettings("VideoSubTitleRemover", "dragon")
         self.last_opened_path = self.settings.value("last_opened_path", "")
+        self.save_folder = self.settings.value("SaveFolder", "")
         self.video_path = None
         self.mask_path = None
         self.processing_thread = None
-        self.inpaint_mode = config.InpaintMode.STTN
+        self.current_algo_mode = config.InpaintMode.STTN
+        self.current_algo_mode = self.settings.value("InpaintMode", "sttn")  # 默认 STTN
+
+        self.printSomething()
         
         # 主窗口布局 - 改为左右结构
         main_widget = QWidget()
@@ -438,12 +456,21 @@ class VideoProcessor(QMainWindow):
         """)
         algo_layout = QVBoxLayout()
         
+        # 创建单选按钮
         self.radio_sttn = QRadioButton("Sttn模型")
         self.radio_propainter = QRadioButton("ProPainter模型")
         self.radio_lama = QRadioButton("Lama模型")
         
-        self.radio_sttn.setChecked(True)  # 默认选择sttn
-        self.set_inpaint_mode(config.InpaintMode.STTN)
+        # 从 QSettings 加载保存的算法模式
+        saved_algo = self.current_algo_mode.upper()
+        if saved_algo == config.InpaintMode.STTN.value.upper():
+            self.radio_sttn.setChecked(True)
+        elif saved_algo == config.InpaintMode.PROPAINTER.value.upper():
+            self.radio_propainter.setChecked(True)
+        elif saved_algo == config.InpaintMode.LAMA.value.upper():
+            self.radio_lama.setChecked(True)
+        else:
+            self.radio_sttn.setChecked(True)  # 默认选择 STTN
         
         # 添加单选按钮
         algo_layout.addWidget(self.radio_sttn)
@@ -464,20 +491,94 @@ class VideoProcessor(QMainWindow):
         layout.addWidget(algo_group)
         
         # 连接信号
-        self.radio_sttn.clicked.connect(
-            lambda: self.set_inpaint_mode(config.InpaintMode.STTN))
-
-        self.radio_propainter.clicked.connect(
-            lambda: self.set_inpaint_mode(config.InpaintMode.PROPAINTER))
-
-        self.radio_lama.clicked.connect(
-            lambda: self.set_inpaint_mode(config.InpaintMode.LAMA))
+        self.radio_sttn.clicked.connect(lambda: self.set_algo_mode("STTN"))
+        self.radio_propainter.clicked.connect(lambda: self.set_algo_mode("PROPAINTER"))
+        self.radio_lama.clicked.connect(lambda: self.set_algo_mode("LAMA"))
         
+        # 保存路径组
+        path_group = QGroupBox("保存路径设置")
+        path_group.setStyleSheet(algo_group.styleSheet())  # 复用样式
+        path_layout = QHBoxLayout()
+        
+        # 路径显示文本框
+        self.path_display = QLineEdit()
+        self.path_display.setStyleSheet("""
+            QLineEdit {
+                height: 36px;
+                border: none;
+                background: white;
+                font-size: 16px;
+                color: #666;
+            }
+        """)
+        
+        if self.save_folder != "":
+            self.path_display.setText(self.save_folder)
+        else:
+            self.path_display.setPlaceholderText("默认保存在源视频目录")
+        
+        # 路径选择按钮
+        path_button = QPushButton("选择路径")
+        path_button.clicked.connect(self.select_save_folder)
+        
+        path_layout.addWidget(self.path_display)
+        path_layout.addWidget(path_button)
+        path_group.setLayout(path_layout)
+        layout.addWidget(path_group)
+        
+        # 添加保存和取消按钮
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        cancel_button = QPushButton("取消")
+        cancel_button.clicked.connect(self.close_settings)
+        button_layout.addWidget(cancel_button)
+        
+        save_button = QPushButton("保存")
+        save_button.clicked.connect(self.save_settings)
+        button_layout.addWidget(save_button)
+        
+        layout.addLayout(button_layout)
         layout.addStretch()
+
+    def set_algo_mode(self, algo_mode):
+        """设置当前算法模式（STTN/PROPAINTER/LAMA）"""
+        self.current_algo_mode = algo_mode
+
+    def select_save_folder(self):
+        """选择保存路径"""
+        folder = QFileDialog.getExistingDirectory(
+            self, 
+            "选择保存目录", 
+            self.save_folder if self.save_folder else ""
+        )
+        if folder:
+            self.save_folder = folder
+            self.path_display.setText(folder)
+
+    def printSomething(self):
+        print("last_opened_path ： ",self.last_opened_path)
+        print("save_folder ： ",self.save_folder)
+        print("current_algo_mode ： ",self.current_algo_mode)
+   
+   
+    def save_settings(self):
+        """保存设置到 QSettings"""
+        # 保存算法模式
+        self.settings.setValue("InpaintMode", self.current_algo_mode)
+        
+        # 保存路径（如果用户未选择，则保存空字符串）
+        self.settings.setValue("SaveFolder", self.save_folder if self.save_folder else "")
+        
+        # 关闭设置窗口
+        self.close_settings()
+
+    def close_settings(self):
+        self.show_home()
 
     def set_inpaint_mode(self, mode):
         """设置修复算法模式"""
-        self.inpaint_mode = mode
+        self.current_algo_mode = mode
         print(f"算法模式已切换至: {mode}")
 
     def show_home(self):
@@ -601,10 +702,10 @@ class VideoProcessor(QMainWindow):
     
 
     def open_video(self):
-        """打开视频文件"""
+        """打开文件"""
         filename, _ = QFileDialog.getOpenFileName(
-            self, "选择视频文件", self.last_opened_path, 
-            "视频文件 (*.mp4 *.avi *.mov *.mkv);;所有文件 (*.*)"
+            self, "选择媒体文件", self.last_opened_path, 
+            "媒体文件 (*.mp4 *.avi *.mov *.mkv *.jpg *.jpeg *.png *.bmp *.gif)"
         )
         
         if filename:
@@ -712,7 +813,7 @@ class VideoProcessor(QMainWindow):
             self.pause_video()
             
             # 启动处理线程
-            self.processing_thread = VideoProcessingThread(self,self.video_path,self.mask_path,self.inpaint_mode)
+            self.processing_thread = VideoProcessingThread(self,self.video_path,self.save_folder,self.mask_path,self.current_algo_mode)
             self.processing_thread.finished.connect(self.processing_finished)
             self.processing_thread.start()
         else : 
