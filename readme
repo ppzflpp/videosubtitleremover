@@ -36,6 +36,10 @@ pip install scipy -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install einops -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install av -i https://pypi.tuna.tsinghua.edu.cn/simple
 
+#训练模型用，推理不需要
+pip install tensorboard -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install scikit-image -i https://pypi.tuna.tsinghua.edu.cn/simple
+
 #用来把原始视频里面的音频文件合并到目标文件中去，可以用ffmpeg代替
 pip install moviepy  -i https://pypi.tuna.tsinghua.edu.cn/simple
 

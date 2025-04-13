@@ -695,7 +695,8 @@ class VideoProcessor(QMainWindow):
         """打开文件(支持多选)"""
         filenames, _ = QFileDialog.getOpenFileNames(
             self, "选择媒体文件", self.last_opened_path, 
-            "媒体文件 (*.mp4 *.avi *.mov *.mkv *.jpg *.jpeg *.png *.bmp *.gif)"
+            #"媒体文件 (*.mp4 *.avi *.mov *.mkv *.jpg *.jpeg *.png *.bmp *.gif)"
+            "媒体文件 (*.mp4 *.avi *.mov *.mkv )"
         )
         
         if filenames:
@@ -872,11 +873,9 @@ class VideoProcessor(QMainWindow):
                     print(f"删除文件 {self.mask_path} 失败: {e}")
         
         #多文件时，就不显示预览窗口了
-        if self.totalFiles > 1:
+        if self.totalFiles ==  1:
             self.previewVideo(output_path)
-        
-
-            
+                    
             
     def previewVideo(self,output_path):
         # 加载处理结果预览
