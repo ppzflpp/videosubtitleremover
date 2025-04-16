@@ -204,7 +204,7 @@ class VideoFrame(QLabel):
 class VideoProcessor(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("视频去字幕工具")
+        self.setWindowTitle("飞鱼去字幕")
         self.setGeometry(500, 500, 500, 800) 
         self.settings = QSettings("VideoSubTitleRemover", "dragon")
         self.last_opened_path = self.settings.value("last_opened_path", "")
@@ -217,6 +217,11 @@ class VideoProcessor(QMainWindow):
         self.totalFiles = len(self.file_queue)
         self.current_algo_mode = config.InpaintMode.STTN
         self.current_algo_mode = self.settings.value("InpaintMode", "sttn")  # 默认 STTN
+
+        # 添加计时相关变量
+        self.process_start_time = None
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_time_cost)
 
         self.printSomething()
         
@@ -405,6 +410,11 @@ class VideoProcessor(QMainWindow):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.progress_bar)
+
+        # 添加耗时显示标签
+        self.time_cost_label = QLabel("耗时: 0秒")
+        self.time_cost_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.time_cost_label)
         
         # 初始化控件状态
         self.play_btn.setEnabled(False)
@@ -669,15 +679,13 @@ class VideoProcessor(QMainWindow):
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def process_video(self):
-
-        print("开始处理视频")
-        
         # 禁用控件
         self.set_controls_enabled(False)
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("")
         
         self.subtitle_processing()
+
 
     def releaseResource(self):
         if self.video_cap:
@@ -817,9 +825,12 @@ class VideoProcessor(QMainWindow):
     def subtitle_processing(self):
         """启动视频处理"""
         if self.video_path and self.mask_path:
+            print("开始处理视频")
             # 重置进度条
             self.progress_bar.setValue(0)
             self.pause_video()
+            self.process_start_time = time.time()
+            self.timer.start(100)  # 每100毫秒更新一次
             
             #加载第一个要处理的视频
             if self.file_queue : 
@@ -839,6 +850,12 @@ class VideoProcessor(QMainWindow):
         else:
             self.set_controls_enabled(True)
             QMessageBox.information(self, "信息", "请选择文件或选择去字幕区域")
+    
+    def update_time_cost(self):
+        """更新耗时显示"""
+        if self.process_start_time:
+            elapsed = time.time() - self.process_start_time
+            self.time_cost_label.setText(f"耗时: {elapsed:.1f}秒")
 
     def processing_finished(self, output_path, time_cost, progress):
         if not output_path and time_cost == -1:
@@ -847,6 +864,12 @@ class VideoProcessor(QMainWindow):
             return
 
         self.progress_bar.setValue(100)
+
+        """处理完成时调用"""
+        self.timer.stop()
+        # 计算总耗时
+        elapsed = time.time() - self.process_start_time
+        self.time_cost_label.setText(f"耗时: {elapsed:.1f}秒")
         
         # 处理队列中的下一个文件
         if self.file_queue:
