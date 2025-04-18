@@ -80,7 +80,6 @@ class VideoFrame(QLabel):
     def set_frame(self, frame):
         self.current_frame = frame
         if frame is not None:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # 转换为 RGB 格式
             height, width = frame.shape[:2]
             bytes_per_line = 3 * width
             q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format_RGB888)

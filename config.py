@@ -4,9 +4,15 @@ from torch import cuda ,device
 import os
 from enum import Enum, unique
 
+DEBUG = False
 
 device = device("cuda:0" if cuda.is_available() else "cpu")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DEBUG_DIR_CROP_FRAME_INPUT = os.path.join(BASE_DIR, 'temp', 'crop_frame_input')
+DEBUG_DIR_MODEL_INPUT = os.path.join(BASE_DIR, 'temp', 'model_frame_input')
+DEBUG_DIR_MODEL_OUTPUT = os.path.join(BASE_DIR, 'temp', 'model_frame_output')
+DEBUG_DIR_CROP_FRAME_OUTPUT = os.path.join(BASE_DIR, 'temp', 'crop_frame_output')
 
 STTN_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'sttn', 'infer_model.pth')
 ###这个是自己训练的模型
@@ -24,15 +30,16 @@ PROPAINTER_MODEL_PATH = os.path.join(BASE_DIR, 'models',"propainter",  'ProPaint
 效果：设置越大速度越慢，但效果越好
 注意：要保证STTN_MAX_LOAD_NUM大于STTN_NEIGHBOR_STRIDE和STTN_REFERENCE_LENGTH
 """
-STTN_SKIP_DETECTION = True
+#传给大模型原图的尺寸，如果mask面积是 4*4；那么传给大模型的原图尺寸就是以mask为中心，原图的长宽是 4*STTN_ORI_IMAGE_SCALE
+STTN_ORI_IMAGE_FAC = 4
+#该变量为true时，STTN_ORI_IMAGE_FAC失效，直接给大模型传原图. 理论上效果更好，但是个别场景不一定好；为true，内存占比相当高，尤其高分辨率视频
+STTN_USE_ORI_IMAGE_FULL_SIZE = False
 # 参考帧步长
 STTN_NEIGHBOR_STRIDE = 5
 # 参考帧长度（数量）
 STTN_REFERENCE_LENGTH = 10
 # 设置STTN算法最大同时处理的帧数量
 STTN_MAX_LOAD_NUM = 50
-if STTN_MAX_LOAD_NUM < STTN_REFERENCE_LENGTH * STTN_NEIGHBOR_STRIDE:
-    STTN_MAX_LOAD_NUM = STTN_REFERENCE_LENGTH * STTN_NEIGHBOR_STRIDE
 # ×××××××××× InpaintMode.STTN算法设置 end ××××××××××
 
 ###训练sttn用到  一定要是 train/sttn/configs/youtube-vos.jos 里面w和h是  1/4关系； 这个值在train/sttn/model/sttn.py 里面用到

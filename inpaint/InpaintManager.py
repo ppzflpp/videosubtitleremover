@@ -4,6 +4,7 @@ from typing import Union
 import torch
 import numpy as np
 from PIL import Image
+import ffmpeg
 
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,8 +15,6 @@ from inpaint.sttn.sttn_inpaint import STTNVideoInpaint as STTN_PROCESSOR
 from inpaint.lama.lama_inpaint import LamaInpaint as LAMA_PROCESSOR
 from inpaint.propainter.propainter import ProPainter as PROPAINTER_PROCESSOR
 
-
-from moviepy import VideoFileClip, AudioFileClip
 
 
 class InpaintManager:
@@ -56,9 +55,10 @@ class InpaintManager:
 
         processor()
         self.replace_audio_of_b(self.video_path,self.video_out_path)
+        self.callback(100)
 
     
-    def replace_audio_of_b(self,video_a_path, video_b_path):
+    def replace_audio_of_b(self, video_a_path, video_b_path):
         """
         将视频A的音频复制到视频B，并覆盖保存视频B
         
@@ -67,39 +67,47 @@ class InpaintManager:
             video_b_path: 要被替换音频的视频路径（将直接被修改）
         """
         # 创建临时文件名
-        temp_path = os.path.splitext(video_b_path)[0] + "_temp.mp4"
+        temp_dir = os.path.dirname(video_b_path) or "."
+        temp_path = os.path.join(temp_dir, f"temp_{os.path.basename(video_b_path)}")
         
         try:
-            # 加载视频B的视频流和视频A的音频流
-            video_clip = VideoFileClip(video_b_path)
-            audio_clip = AudioFileClip(video_a_path)
+            # 使用ffmpeg-python构建处理流程
+            input_video = ffmpeg.input(video_b_path)
+            input_audio = ffmpeg.input(video_a_path)
             
-            # 设置新音频
-            final_clip = video_clip.with_audio(audio_clip)
-            
-            # 输出到临时文件
-            final_clip.write_videofile(
-                temp_path,
-                codec="libx264",
-                audio_codec="aac",
-                threads=4,
-                logger=None
+            (
+                ffmpeg
+                .input(video_b_path)['v']  # 仅视频流
+                .output(
+                    ffmpeg.input(video_a_path)['a'],  # 仅音频流
+                    temp_path,
+                    vcodec='copy',  # 复制视频
+                    acodec='aac',   # 重新编码音频
+                    shortest=None,  # 对齐时长
+                    y=None          # 覆盖输出
+                )
+                .global_args('-loglevel', 'quiet')  # 完全静默
+                .run(cmd='ffmpeg', capture_stdout=True, capture_stderr=True)
             )
             
-            # 关闭资源
-            video_clip.close()
-            audio_clip.close()
-            final_clip.close()
+            # 验证输出文件
+            if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+                raise RuntimeError("输出文件创建失败")
+                
+            # 替换原文件（原子操作）
+            if os.name == 'nt':  # Windows系统
+                os.remove(video_b_path)
+            os.rename(temp_path, video_b_path)
             
-            # 删除原文件并将临时文件重命名为原文件
-            os.remove(video_b_path)
-            os.rename(temp_path, video_b_path)          
-            
-        except Exception as e:
-            # 如果出错，删除临时文件
+        except ffmpeg.Error as e:
+            print(f"FFmpeg处理失败: {e.stderr.decode('utf8') if e.stderr else e}")
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+        except Exception as e:
             print(f"操作失败: {str(e)}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
 
 
         

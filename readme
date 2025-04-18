@@ -40,8 +40,8 @@ pip install av -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install tensorboard -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install scikit-image -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-#用来把原始视频里面的音频文件合并到目标文件中去，可以用ffmpeg代替
-pip install moviepy  -i https://pypi.tuna.tsinghua.edu.cn/simple
+#用来把原始视频里面的音频文件合并到目标文件中去
+pip install ffmpeg-python -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 5、python main.py
 
@@ -60,6 +60,14 @@ https://pan.baidu.com/s/1L1Hgc4kU9JXqbkFHNssQog?pwd=25ft 提取码: 25ft
 --subvideo_length  默认值80，可以降低
 --resize_ratio  默认10，可以调低
 这4个参数可以只调一个或者多个，看自己电脑的实际运行情况测试
+
+
+5,sttn 算法可以处理绝大部分视频
+1660S显卡  + 1G显存
+可以处理最长35s，分辨率是1080p的视频
+处理时长一般是视频时长的6倍左右
+如果感觉处理效果不好，可以尝试调整参数继续精修，但是电脑很容易OOM，配置高的电脑可以尝试
+
 
 
 
