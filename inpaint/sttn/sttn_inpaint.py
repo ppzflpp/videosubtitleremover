@@ -404,28 +404,30 @@ class STTNVideoInpaint:
 
         # 6. 自然融合修复区域（正确过渡带实现）
         for i in range(len(frames_hr)):
-            frame = frames_hr[i].copy()
-            repaired = inpainted_frames[i]  # 修复后的100x100区域
+            # 获取当前帧和修复区域
+            original_frame = frames_hr[i]
+            repaired_region = inpainted_frames[i]
+        
+            # 创建边缘过渡区域（模糊mask边缘）
+            blur_size = 5  # 可以调整这个值控制融合宽度
+            blurred_mask = cv2.GaussianBlur(cropped_mask.astype(np.float32), (blur_size, blur_size), 0)
+            # 对每个颜色通道处理
+            for c in range(3):
+                 # 原始图像区域
+                 original_region = original_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax, c]
+                 
+                 # 加权融合
+                 blended_region = (original_region * (1 - blurred_mask) + 
+                                 repaired_region[:, :, c] * blurred_mask)
+                 
+                 # 只替换mask区域（>0的部分）
+                 original_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax, c] = np.where(
+                     cropped_mask > 0,
+                     blended_region,
+                     original_region
+                 )
             
-            # 1. 仅对mask边缘做模糊处理（不扩展区域）
-            edge_blur_size = 9  # 边缘模糊程度（奇数，建议3-11）
-            blurred_mask = cv2.GaussianBlur(cropped_mask.astype(np.float32), 
-                                        (edge_blur_size, edge_blur_size), 0)
-            
-            # 2. 核心区域保持原始mask（确保中心完全使用修复内容）
-            inner_mask = cv2.erode(cropped_mask, np.ones((edge_blur_size, edge_blur_size)))
-            blurred_mask[inner_mask == 1] = 1.0  # 核心区强制设为1.0
-            
-            # 3. 直接替换目标区域（仅边缘融合）
-            original_roi = frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
-            for c in range(3):  # 逐通道处理
-                original_roi[..., c] = np.where(
-                    cropped_mask == 1,
-                    repaired[..., c] * blurred_mask + original_roi[..., c] * (1 - blurred_mask),
-                    original_roi[..., c]
-                )
-            
-            writer.write(frame)
+            writer.write(original_frame)
 
         # 释放视频写入对象
         writer.release()
