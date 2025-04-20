@@ -14,8 +14,9 @@ DEBUG_DIR_MODEL_INPUT = os.path.join(BASE_DIR, 'temp', 'model_frame_input')
 DEBUG_DIR_MODEL_OUTPUT = os.path.join(BASE_DIR, 'temp', 'model_frame_output')
 DEBUG_DIR_CROP_FRAME_OUTPUT = os.path.join(BASE_DIR, 'temp', 'crop_frame_output')
 
-STTN_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'sttn', 'infer_model.pth')
+STTN_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'sttn', 'sttn.pth')
 ###这个是自己训练的模型
+#STTN_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'sttn', 'infer_model.pth')
 #STTN_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'sttn', 'gen_00001.pth')
 LAMA_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'big-lama', 'big-lama.pt')
 
@@ -33,7 +34,7 @@ PROPAINTER_MODEL_PATH = os.path.join(BASE_DIR, 'models',"propainter",  'ProPaint
 #传给大模型原图的尺寸，如果mask面积是 4*4；那么传给大模型的原图尺寸就是以mask为中心，原图的长宽是 4*STTN_ORI_IMAGE_SCALE
 STTN_ORI_IMAGE_FAC = 4
 #该变量为true时，STTN_ORI_IMAGE_FAC失效，直接给大模型传原图. 理论上效果更好，但是个别场景不一定好；为true，内存占比相当高，尤其高分辨率视频
-STTN_USE_ORI_IMAGE_FULL_SIZE = False
+STTN_USE_ORI_IMAGE_FULL_SIZE = True
 # 参考帧步长
 STTN_NEIGHBOR_STRIDE = 5
 # 参考帧长度（数量）

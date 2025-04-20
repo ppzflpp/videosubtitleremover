@@ -893,6 +893,8 @@ class VideoProcessor(QMainWindow):
                     print(f"已删除文件: {self.mask_path}")
                 except OSError as e:
                     print(f"删除文件 {self.mask_path} 失败: {e}")
+                    
+            self.mask_path = None
         
         #多文件时，就不显示预览窗口了
         if self.totalFiles ==  1:

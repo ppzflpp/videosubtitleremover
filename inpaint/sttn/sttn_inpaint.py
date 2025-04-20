@@ -9,6 +9,8 @@ from typing import List
 import sys
 import shutil
 from tqdm import tqdm
+from PIL import Image
+from skimage import exposure
 
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,20 +28,25 @@ _to_tensors = transforms.Compose([
 ])
 
 
+model_input_width = 432
+model_input_height = 240
+
+
 class STTNInpaint:
 
     def __init__(self,callback=None):
         # 模型输入用的宽和高
-        self.model_input_width, self.model_input_height = 432, 240
+
         self.device = config.device
 
         # 1. 创建InpaintGenerator模型实例并装载到选择的设备上
-        self.model = InpaintGenerator(self.model_input_width,self.model_input_height).to(self.device)
+        self.model = InpaintGenerator(model_input_width,model_input_height).to(self.device)
 
         # 2. 载入预训练模型的权重，转载模型的状态字典
         self.model.load_state_dict(torch.load(config.STTN_MODEL_PATH, map_location=self.device)['netG'])
         # 3. 将模型设置为评估模式
         self.model.eval()
+
         # 2. 设置相连帧数
         self.neighbor_stride = config.STTN_NEIGHBOR_STRIDE
         self.ref_length = config.STTN_REFERENCE_LENGTH
@@ -125,6 +132,7 @@ class STTNInpaint:
 
     def inpaint(self, frames: List[np.ndarray], mask: np.ndarray):
         start_time = time.time()
+        end_time = start_time
 
         """
         使用STTN完成空洞填充（空洞即被遮罩的区域）
@@ -146,9 +154,10 @@ class STTNInpaint:
         # 缩放 frames 和 mask 到模型需要的尺寸
         resized_frames = [None] * frame_length
         for i, frame in enumerate(frames):
-            resized_frames[i] = cv2.resize(frame, (self.model_input_width, self.model_input_height), 
+            resized_frames[i] = cv2.resize(frame, (model_input_width, model_input_height), 
                                         interpolation=cv2.INTER_LINEAR)
-        resized_mask = cv2.resize(mask, (self.model_input_width, self.model_input_height), interpolation=cv2.INTER_NEAREST)
+                            
+        resized_mask = cv2.resize(mask, (model_input_width, model_input_height), interpolation=cv2.INTER_NEAREST)                   
 
         # 预处理二进制掩码（提前计算）
         binary_mask = (resized_mask.squeeze() != 0).astype(np.uint8)
@@ -167,7 +176,7 @@ class STTNInpaint:
 
         # 对帧进行预处理转换为张量，并进行归一化
         feats = _to_tensors(resized_frames).unsqueeze(0) * 2 - 1
-        mask_tensor = _to_tensors([resized_mask]).unsqueeze(0)  
+        mask_tensor = _to_tensors([resized_mask * 255]).unsqueeze(0)
 
         # 扩展mask的批次维度
         mask_tensor = mask_tensor.expand(-1,feats.size(1), -1, -1, -1)  
@@ -175,9 +184,9 @@ class STTNInpaint:
         # 把特征张量转移到指定的设备（CPU或GPU）
         feats, mask_tensor = feats.to(self.device), mask_tensor.to(self.device)
 
-        end_time = time.time()
         if config.DEBUG:
-            print("STTNInpaint,【修复中】预处理1耗时：",(end_time - start_time))
+            print(f"STTNInpaint,【修复中】预处理1耗时：{(time.time() - end_time):.2f}秒")
+            end_time = time.time()
 
         # 初始化一个与视频长度相同的列表，用于存储处理完成的帧
         comp_frames = [None] * frame_length
@@ -185,15 +194,15 @@ class STTNInpaint:
         # 关闭梯度计算，用于推理阶段节省内存并加速
         with torch.no_grad():
             # 将处理好的帧通过编码器，产生特征表示
-            feats = self.model.encoder((feats * (1 - mask_tensor).float()).view(frame_length, 3, self.model_input_height, self.model_input_width))
+            feats = self.model.encoder((feats * (1 - mask_tensor).float()).view(frame_length, 3, model_input_height, model_input_width))
             # 获取特征维度信息
             _, c, feat_h, feat_w = feats.size()
             # 调整特征形状以匹配模型的期望输入
             feats = feats.view(1, frame_length, c, feat_h, feat_w)
 
-        end_time = time.time()
         if config.DEBUG:
-            print("STTNInpaint,【修复中】预处理2耗时：",(end_time - start_time))
+            print(f"STTNInpaint,【修复中】预处理2耗时：{(time.time() - end_time):.2f}秒")
+            end_time = time.time()
 
         # 获取重绘区域
         # 在设定的邻居帧步幅内循环处理视频
@@ -224,7 +233,7 @@ class STTNInpaint:
                 )
 
                 if config.DEBUG:
-                    print(f"STTNInpaint,【修复中】修复第{f}帧,【步骤3耗】时： :  {(time.time() - end_time):.2f}秒")
+                    print(f"STTNInpaint,【修复中】修复第{f}帧,【步骤3】耗时： :  {(time.time() - end_time):.2f}秒")
                     end_time = time.time()
 
                 # 将预测的特征通过解码器生成图片，并应用激活函数tanh，然后分离出张量；解码并立即移回CPU
@@ -260,7 +269,7 @@ class STTNInpaint:
         resized_comp_frames = [None] * frame_length
         for i, frame in enumerate(comp_frames):
             resized_frame = cv2.resize(frame.astype(np.uint8), (original_width, original_height), 
-                                    interpolation=cv2.INTER_LINEAR)
+                                    interpolation=cv2.INTER_CUBIC)
             resized_comp_frames[i] = cv2.cvtColor(resized_frame, cv2.COLOR_RGB2BGR)
         
         if config.DEBUG:
@@ -269,7 +278,8 @@ class STTNInpaint:
             os.makedirs(config.DEBUG_DIR_CROP_FRAME_OUTPUT, exist_ok=True)
             for i, frame in enumerate(resized_comp_frames):
                 save_path = os.path.join(config.DEBUG_DIR_CROP_FRAME_OUTPUT, f"crop_frame_output_{i:04d}.png")
-                cv2.imwrite(save_path, frame)
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                cv2.imwrite(save_path, rgb_frame) 
 
 
         #释放内存，显存  
@@ -280,6 +290,14 @@ class STTNInpaint:
         return resized_comp_frames
 
 class STTNVideoInpaint:
+
+    def changeOritation(self,width,height):
+        global model_input_width
+        global model_input_height
+        if width < height:
+            tmp = model_input_width
+            model_input_width = model_input_height
+            model_input_height = tmp
 
     def read_frame_info_from_video(self):
         # 使用opencv读取视频
@@ -295,10 +313,6 @@ class STTNVideoInpaint:
         return reader, frame_info
 
     def __init__(self, video_path, video_out_path, mask_path=None, callback=None):
-        start_time = time.time()
-
-        # STTNInpaint视频修复实例初始化
-        self.sttn_inpaint = STTNInpaint(callback)
         # 视频和掩码路径
         self.video_path = video_path
         self.mask_path = mask_path
@@ -308,14 +322,16 @@ class STTNVideoInpaint:
 
         self.clip_gap = config.STTN_MAX_LOAD_NUM
 
-        end_time = time.time()
-        if config.DEBUG:
-            print("STTNVideoInpaint,init耗时：",(end_time - start_time))
-
     def __call__(self, input_mask=None, input_sub_remover=None, tbar=None):
         start_time = time.time()
+        end_time = start_time
         # 读取视频帧信息
         reader, frame_info = self.read_frame_info_from_video()
+        self.changeOritation(frame_info['W_ori'], frame_info['H_ori'])
+
+        # STTNInpaint视频修复实例初始化
+        self.sttn_inpaint = STTNInpaint(self.callback)
+
         if input_sub_remover is not None:
             writer = input_sub_remover.video_writer
         else:
@@ -353,9 +369,9 @@ class STTNVideoInpaint:
             cropped_frame = frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
             cropped_frames.append(cropped_frame)
 
-        end_time = time.time()
         if config.DEBUG:
-            print("STTNVideoInpaint,修复准备耗时：",(end_time - start_time))
+            print(f"STTNVideoInpaint,修复准备耗时：{(time.time() - end_time):.2f}秒")
+            end_time = time.time()
         
         # 新增分批次处理逻辑 ##############################################
         batch_size = config.STTN_MAX_LOAD_NUM
@@ -382,42 +398,60 @@ class STTNVideoInpaint:
                 else :
                     self.callback(progress)
         
-        end_time = time.time()
         if config.DEBUG:
-            print("STTNVideoInpaint,修复耗时：",(end_time - start_time))
+            print(f"STTNVideoInpaint,修复耗时：{(time.time() - end_time):.2f}秒")
+            end_time = time.time()
 
-        # 6. 精确合并修复区域
+        # 6. 自然融合修复区域（正确过渡带实现）
         for i in range(len(frames_hr)):
-            # 获取当前帧和修复区域
-            original_frame = frames_hr[i]
-            repaired_region = inpainted_frames[i]
+            frame = frames_hr[i].copy()  # 创建副本避免修改原数据
+            repaired_region = inpainted_frames[i]  # 原始修复区域（未缩放）
             
-            # 创建边缘过渡区域（模糊mask边缘）
-            blur_size = 5  # 可以调整这个值控制融合宽度
-            blurred_mask = cv2.GaussianBlur(cropped_mask.astype(np.float32), (blur_size, blur_size), 0)
+            # 1. 计算扩展后的区域（增加过渡带）
+            expand_pixels = 20  # 过渡带宽度（可根据需要调整）
             
-            # 对每个颜色通道处理
-            for c in range(3):
-                # 原始图像区域
-                original_region = original_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax, c]
-                
-                # 加权融合
-                blended_region = (original_region * (1 - blurred_mask) + 
-                                repaired_region[:, :, c] * blurred_mask)
-                
-                # 只替换mask区域（>0的部分）
-                original_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax, c] = np.where(
-                    cropped_mask > 0,
-                    blended_region,
-                    original_region
-                )
+            # 计算扩展后的坐标（带边界检查）
+            y_min_exp = max(0, crop_ymin - expand_pixels)
+            y_max_exp = min(frame.shape[0], crop_ymax + expand_pixels) 
+            x_min_exp = max(0, crop_xmin - expand_pixels)
+            x_max_exp = min(frame.shape[1], crop_xmax + expand_pixels)
             
-            writer.write(original_frame)
+            # 2. 创建扩展后的融合mask
+            mask_expanded = np.zeros((y_max_exp-y_min_exp, x_max_exp-x_min_exp), dtype=np.float32)
+            
+            # 在扩展mask中定位原始修复区域
+            inner_y_start = crop_ymin - y_min_exp
+            inner_y_end = inner_y_start + (crop_ymax - crop_ymin)
+            inner_x_start = crop_xmin - x_min_exp
+            inner_x_end = inner_x_start + (crop_xmax - crop_xmin)
+            
+            # 原始修复区域保持1.0，周围为过渡带
+            mask_expanded[inner_y_start:inner_y_end, inner_x_start:inner_x_end] = cropped_mask
+            
+            # 3. 对过渡带进行渐变处理（核心区域保持1.0）
+            blur_size = expand_pixels * 2 + 1  # 模糊核大小（奇数）
+            mask_expanded = cv2.GaussianBlur(mask_expanded, (blur_size, blur_size), 0)
+            mask_expanded[inner_y_start:inner_y_end, inner_x_start:inner_x_end] = cropped_mask  # 恢复核心区域
+            
+            # 4. 准备修复内容（不缩放，仅扩展边缘）
+            repaired_expanded = np.zeros_like(frame[y_min_exp:y_max_exp, x_min_exp:x_max_exp])
+            
+            # 将原始修复内容放置在中心位置
+            repaired_expanded[inner_y_start:inner_y_end, inner_x_start:inner_x_end] = repaired_region
+            
+            # 5. 执行融合（仅过渡带区域会混合）
+            frame_roi = frame[y_min_exp:y_max_exp, x_min_exp:x_max_exp]
+            blended = frame_roi * (1 - mask_expanded[..., np.newaxis]) + \
+                    repaired_expanded * mask_expanded[..., np.newaxis]
+            
+            # 6. 应用融合结果
+            frame[y_min_exp:y_max_exp, x_min_exp:x_max_exp] = blended
+            writer.write(frame)
 
         # 释放视频写入对象
         writer.release()
         self.callback(95)
 
-        end_time = time.time()
         if config.DEBUG:
-            print("STTNVideoInpaint,修复后耗时：",(end_time - start_time))
+            print(f"STTNVideoInpaint,合并图片耗时：{(time.time() - end_time):.2f}秒")
+            print(f"STTNVideoInpaint,总计耗时： {(time.time() - start_time):.2f}秒")

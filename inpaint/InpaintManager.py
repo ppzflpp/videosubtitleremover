@@ -5,6 +5,7 @@ import torch
 import numpy as np
 from PIL import Image
 import ffmpeg
+from pathlib import Path
 
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,6 +26,8 @@ class InpaintManager:
         self.callback = callback
         self.mode = mode
 
+        self.video_out_path = self.get_unique_outpath(f"{os.path.basename(self.save_folder).rsplit('.', 1)[0]}_no_sub.mp4") 
+
         # 设置输出视频文件的路径
         if save_folder:  # 需求2：如果save_folder不为空，则优先使用它
             os.makedirs(save_folder, exist_ok=True)  # 自动创建路径
@@ -37,7 +40,8 @@ class InpaintManager:
                 os.path.dirname(os.path.abspath(self.video_path)),
                 f"{os.path.basename(self.video_path).rsplit('.', 1)[0]}_no_sub.mp4"
             )
-        
+
+        self.video_out_path = self.get_unique_outpath(self.video_out_path) 
 
     def __call__(self):
         print("当前使用模型：",self.mode)
@@ -57,6 +61,18 @@ class InpaintManager:
         self.replace_audio_of_b(self.video_path,self.video_out_path)
         self.callback(100)
 
+    def get_unique_outpath(self,video_path):
+        video_path = Path(video_path)
+        base_name = video_path.stem  # 获取不带扩展名的文件名
+        outpath = Path(f"{video_path.parent}/{base_name}.mp4")
+        counter = 1
+        
+        # 如果文件已存在，则添加 _1, _2, ...
+        while outpath.exists():
+            outpath = Path(f"{video_path.parent}/{base_name}_{counter}.mp4")
+            counter += 1
+        
+        return str(outpath)
     
     def replace_audio_of_b(self, video_a_path, video_b_path):
         """

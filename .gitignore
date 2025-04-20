@@ -2,6 +2,7 @@ build/*
 dist/*
 main.spec
 models/*
+temp/*
 readme.zip
 videoRemover/*
 **/__pycache__/ 

@@ -1,13 +1,25 @@
 import matplotlib.patches as patches
 from matplotlib.path import Path
+import os
+import sys
 import io
 import cv2
+import time
+import argparse
+import shutil
 import random
 import zipfile
+from glob import glob
+import math
 import numpy as np
-from PIL import Image, ImageOps
+import torch.nn.functional as F
+import torchvision.transforms as transforms
+from PIL import Image, ImageOps, ImageDraw, ImageFilter
 
 import torch
+import torchvision
+import torch.nn as nn
+import torch.distributed as dist
 
 import matplotlib
 from matplotlib import pyplot as plt
@@ -31,11 +43,9 @@ class ZipReader(object):
             return file_dict[path]
 
     @staticmethod
-    def imread(path, idx):
+    def imread(path, image_name):
         zfile = ZipReader.build_file_dict(path)
-        znames = zfile.namelist()
-        znames.sort()
-        data = zfile.read(znames[idx])
+        data = zfile.read(image_name)
         im = Image.open(io.BytesIO(data))
         return im
 
@@ -98,7 +108,7 @@ class ToTorchFormatTensor(object):
 
     def __call__(self, pic):
         if isinstance(pic, np.ndarray):
-            # numpy img: [L, C, H, W]
+            # numpy img: [L, C, H, W]                          
             img = torch.from_numpy(pic).permute(2, 3, 0, 1).contiguous()
         else:
             # handle PIL Image
@@ -235,7 +245,6 @@ if __name__ == '__main__':
         # The returned masks are either stationary (50%) or moving (50%)
         masks = create_random_shape_with_random_motion(
             video_length, imageHeight=240, imageWidth=432)
-        print(np.array(masks[0]).shape)
 
         for m in masks:
             cv2.imshow('mask', np.array(m))
