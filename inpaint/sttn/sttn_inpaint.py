@@ -404,48 +404,27 @@ class STTNVideoInpaint:
 
         # 6. 自然融合修复区域（正确过渡带实现）
         for i in range(len(frames_hr)):
-            frame = frames_hr[i].copy()  # 创建副本避免修改原数据
-            repaired_region = inpainted_frames[i]  # 原始修复区域（未缩放）
+            frame = frames_hr[i].copy()
+            repaired = inpainted_frames[i]  # 修复后的100x100区域
             
-            # 1. 计算扩展后的区域（增加过渡带）
-            expand_pixels = 20  # 过渡带宽度（可根据需要调整）
+            # 1. 仅对mask边缘做模糊处理（不扩展区域）
+            edge_blur_size = 9  # 边缘模糊程度（奇数，建议3-11）
+            blurred_mask = cv2.GaussianBlur(cropped_mask.astype(np.float32), 
+                                        (edge_blur_size, edge_blur_size), 0)
             
-            # 计算扩展后的坐标（带边界检查）
-            y_min_exp = max(0, crop_ymin - expand_pixels)
-            y_max_exp = min(frame.shape[0], crop_ymax + expand_pixels) 
-            x_min_exp = max(0, crop_xmin - expand_pixels)
-            x_max_exp = min(frame.shape[1], crop_xmax + expand_pixels)
+            # 2. 核心区域保持原始mask（确保中心完全使用修复内容）
+            inner_mask = cv2.erode(cropped_mask, np.ones((edge_blur_size, edge_blur_size)))
+            blurred_mask[inner_mask == 1] = 1.0  # 核心区强制设为1.0
             
-            # 2. 创建扩展后的融合mask
-            mask_expanded = np.zeros((y_max_exp-y_min_exp, x_max_exp-x_min_exp), dtype=np.float32)
+            # 3. 直接替换目标区域（仅边缘融合）
+            original_roi = frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
+            for c in range(3):  # 逐通道处理
+                original_roi[..., c] = np.where(
+                    cropped_mask == 1,
+                    repaired[..., c] * blurred_mask + original_roi[..., c] * (1 - blurred_mask),
+                    original_roi[..., c]
+                )
             
-            # 在扩展mask中定位原始修复区域
-            inner_y_start = crop_ymin - y_min_exp
-            inner_y_end = inner_y_start + (crop_ymax - crop_ymin)
-            inner_x_start = crop_xmin - x_min_exp
-            inner_x_end = inner_x_start + (crop_xmax - crop_xmin)
-            
-            # 原始修复区域保持1.0，周围为过渡带
-            mask_expanded[inner_y_start:inner_y_end, inner_x_start:inner_x_end] = cropped_mask
-            
-            # 3. 对过渡带进行渐变处理（核心区域保持1.0）
-            blur_size = expand_pixels * 2 + 1  # 模糊核大小（奇数）
-            mask_expanded = cv2.GaussianBlur(mask_expanded, (blur_size, blur_size), 0)
-            mask_expanded[inner_y_start:inner_y_end, inner_x_start:inner_x_end] = cropped_mask  # 恢复核心区域
-            
-            # 4. 准备修复内容（不缩放，仅扩展边缘）
-            repaired_expanded = np.zeros_like(frame[y_min_exp:y_max_exp, x_min_exp:x_max_exp])
-            
-            # 将原始修复内容放置在中心位置
-            repaired_expanded[inner_y_start:inner_y_end, inner_x_start:inner_x_end] = repaired_region
-            
-            # 5. 执行融合（仅过渡带区域会混合）
-            frame_roi = frame[y_min_exp:y_max_exp, x_min_exp:x_max_exp]
-            blended = frame_roi * (1 - mask_expanded[..., np.newaxis]) + \
-                    repaired_expanded * mask_expanded[..., np.newaxis]
-            
-            # 6. 应用融合结果
-            frame[y_min_exp:y_max_exp, x_min_exp:x_max_exp] = blended
             writer.write(frame)
 
         # 释放视频写入对象

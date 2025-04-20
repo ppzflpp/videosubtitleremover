@@ -65,7 +65,7 @@ https://pan.baidu.com/s/1L1Hgc4kU9JXqbkFHNssQog?pwd=25ft 提取码: 25ft
 5,sttn 算法可以处理绝大部分视频
 1660S显卡  + 1G显存
 可以处理最长35s，分辨率是1080p的视频
-处理时长一般是视频时长的6倍左右
+处理时长一般是视频时长的6-8倍左右
 如果感觉处理效果不好，可以尝试调整参数继续精修，但是电脑很容易OOM，配置高的电脑可以尝试
 
 
@@ -77,5 +77,5 @@ https://pan.baidu.com/s/1L1Hgc4kU9JXqbkFHNssQog?pwd=25ft 提取码: 25ft
 
 
 
-pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" main.py
+pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" --add-data="models/propainter/*;models/propainter" main.py
 pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" main.py
