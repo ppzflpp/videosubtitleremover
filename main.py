@@ -504,6 +504,9 @@ class VideoProcessor(QMainWindow):
         else:
             self.path_display.setPlaceholderText("默认保存在源视频目录")
         
+        self.editPath = ""
+        self.path_display.textChanged.connect(self.handle_text_change)
+        
         # 路径选择按钮
         path_button = QPushButton("选择路径")
         path_button.clicked.connect(self.select_save_folder)
@@ -539,6 +542,9 @@ class VideoProcessor(QMainWindow):
 
         layout.addWidget(self.environmentLabel)
 
+    def handle_text_change(self,text):
+        self.save_folder = text
+
     def set_algo_mode(self, algo_mode):
         """设置当前算法模式（STTN/PROPAINTER/LAMA）"""
         self.current_algo_mode = algo_mode
@@ -570,6 +576,10 @@ class VideoProcessor(QMainWindow):
         
         # 关闭设置窗口
         self.close_settings()
+
+        print("current mode is ",self.current_algo_mode)
+        print("current save_folder is ",self.save_folder)
+
 
     def close_settings(self):
         self.show_home()

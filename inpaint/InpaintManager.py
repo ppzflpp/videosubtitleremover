@@ -103,7 +103,7 @@ class InpaintManager:
                     y=None          # 覆盖输出
                 )
                 .global_args('-loglevel', 'quiet')  # 完全静默
-                .run(cmd='ffmpeg', capture_stdout=True, capture_stderr=True)
+                .run(cmd='tools/ffmpeg/bin/my_ffmpeg')
             )
             
             # 验证输出文件
