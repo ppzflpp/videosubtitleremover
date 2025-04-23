@@ -44,14 +44,12 @@ class InpaintManager:
         self.video_out_path = self.get_unique_outpath(self.video_out_path) 
 
     def __call__(self):
-        print("当前使用模型：",self.mode)
-
         processor = None
         if self.mode.upper() == config.InpaintMode.STTN.value.upper():
             processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
         elif self.mode.upper() == config.InpaintMode.LAMA.value.upper() :
             processor = LAMA_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
-        elif self.mode.upper() == config.InpaintMode.PROPAINTER.value.upper():
+        elif self.mode.upper() == config.InpaintMode.PROPAINTER.value.upper(): 
             processor = PROPAINTER_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
         else :
             processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)

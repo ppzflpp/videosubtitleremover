@@ -41,7 +41,6 @@ class VideoProcessingThread(QThread):
         """线程运行的逻辑"""
         # 记录开始时间
         start = time.time()
-        print("VideoProcessingThread....")
         # 模拟耗时操作
         manager = InpaintManager(self.video_path, self.save_folder,self.mask_path,mode=self.mode,callback=self.update)
         manager()
@@ -111,6 +110,9 @@ class VideoFrame(QLabel):
             self.update()
     
     def mouseReleaseEvent(self, event):
+
+
+
         if self.dragging and self.pixmap():
             self.dragging = False
             if self.selection_rect.width() > 10 and self.selection_rect.height() > 10:
@@ -690,10 +692,67 @@ class VideoProcessor(QMainWindow):
     def process_video(self):
         # 禁用控件
         self.set_controls_enabled(False)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("")
-        
-        self.subtitle_processing()
+
+        #如果这个条件成立，说明是用户没有重新选择视频，直接使用上次的视频，那默认把之前的第一个放入队列，保存程序统一性
+        if self.video_path and (not self.file_queue):
+            self.file_queue.append(self.video_path)
+            self.totalFiles = 1
+
+        self.begin_process()
+
+    def begin_process(self):
+
+        if not self.video_path or not self.mask_path:
+            self.set_controls_enabled(True)
+            QMessageBox.information(self, "信息", "请选择文件或选择去字幕区域")
+            return
+
+        #加载第一个要处理的视频
+        if self.file_queue : 
+            self.set_controls_enabled(False)
+            # 重置进度条
+            self.progress_bar.setValue(0)
+            self.pause_video()
+
+            if self.process_start_time == None :
+                self.process_start_time = time.time()
+
+            self.timer.start(100)  # 每100毫秒更新一次
+
+            next_file = self.file_queue.pop(0)
+
+            print(f"共{self.totalFiles}个文件，正在处理第{self.totalFiles - len(self.file_queue)}个文件，文件名：{next_file}")
+
+            self.load_preview_file(next_file)
+
+            self.progress_bar.setValue(2)
+            self.progress_bar.setFormat(f"2% ({self.totalFiles - len(self.file_queue)}/{self.totalFiles})")
+
+            self.subtitle_processing(next_file,self.save_folder,self.mask_path)
+        else:
+            self.set_controls_enabled(True)
+            """处理完成时调用"""
+            self.timer.stop()
+            # 计算总耗时
+            elapsed = time.time() - self.process_start_time
+            self.process_start_time = None
+            self.time_cost_label.setText(f"耗时: {elapsed:.1f}秒")
+            #更新选取UI
+            self.original_video.selection_rect = QRect()
+            self.original_video.update()
+            #更新进度条
+            self.progress_bar.setValue(100)
+            self.progress_bar.setFormat(f"全部完成")
+            #删除遮罩文件
+            if os.path.exists(self.mask_path):
+                try:
+                    os.remove(self.mask_path)
+                    print(f"已删除文件: {self.mask_path}")
+                except OSError as e:
+                    print(f"删除文件 {self.mask_path} 失败: {e}")       
+            self.mask_path = None
+            #弹窗提醒
+            QMessageBox.information(self, "处理完成", "所有文件处理完成")
 
 
     def releaseResource(self):
@@ -727,6 +786,13 @@ class VideoProcessor(QMainWindow):
             
             # 加载第一个文件预览
             self.load_preview_file(filenames[0])
+            # 启用控件
+            self.set_controls_enabled(True)
+
+            #保存第一个视频的文件路径，保存mask时会用到该路径
+            self.video_path = filenames[0]
+            self.progress_bar.setValue(0)
+            self.progress_bar.setFormat(f"0% 0/{self.totalFiles})")
 
             #多文件时，就不显示预览窗口
             if self.totalFiles > 1:
@@ -740,7 +806,6 @@ class VideoProcessor(QMainWindow):
     
     def load_preview_file(self, filename):
         """加载单个文件用于预览"""
-        self.video_path = filename
         self.original_video.video_path = filename
         self.processed_video.video_path = filename
         self.releaseResource()
@@ -758,15 +823,9 @@ class VideoProcessor(QMainWindow):
                 self.original_height, self.original_width = frame.shape[:2]
                 self.display_frame(frame, self.original_video)
             
-            # 启用控件
-            self.play_btn.setEnabled(True)
-            self.process_btn.setEnabled(True)
-            self.progress_slider.setEnabled(True)
-            
             # 初始化进度条
             self.progress_slider.setRange(0, 100)
             self.update_progress()
-            self.progress_bar.setFormat(f"")
         else:
             print("无法打开视频文件")
 
@@ -831,34 +890,11 @@ class VideoProcessor(QMainWindow):
         self.process_btn.setEnabled(enabled)
         self.progress_slider.setEnabled(enabled)
 
-    def subtitle_processing(self):
-        """启动视频处理"""
-        if self.video_path and self.mask_path:
-            print("开始处理视频")
-            # 重置进度条
-            self.progress_bar.setValue(0)
-            self.pause_video()
-            self.process_start_time = time.time()
-            self.timer.start(100)  # 每100毫秒更新一次
-            
-            #加载第一个要处理的视频
-            if self.file_queue : 
-                next_file = self.file_queue.pop(0)
-                self.load_preview_file(next_file)
-
-            # 禁用控件
-            self.set_controls_enabled(False)
-
+    def subtitle_processing(self,file_path,save_folder,mask_path):
             # 启动处理线程
-            self.processing_thread = VideoProcessingThread(
-                self, self.video_path, self.save_folder, 
-                self.mask_path, self.current_algo_mode
-            )
+            self.processing_thread = VideoProcessingThread(self, file_path, save_folder, mask_path, self.current_algo_mode)
             self.processing_thread.finished.connect(self.processing_finished)
             self.processing_thread.start()
-        else:
-            self.set_controls_enabled(True)
-            QMessageBox.information(self, "信息", "请选择文件或选择去字幕区域")
     
     def update_time_cost(self):
         """更新耗时显示"""
@@ -872,45 +908,12 @@ class VideoProcessor(QMainWindow):
             self.progress_bar.setFormat(f"{progress}% ({self.totalFiles - len(self.file_queue)}/{self.totalFiles})")
             return
 
-        self.progress_bar.setValue(100)
+        self.begin_process()
 
-        """处理完成时调用"""
-        self.timer.stop()
-        # 计算总耗时
-        elapsed = time.time() - self.process_start_time
-        self.time_cost_label.setText(f"耗时: {elapsed:.1f}秒")
-        
-        # 处理队列中的下一个文件
-        if self.file_queue:
-            self.progress_bar.setFormat(f"{progress}% ({self.totalFiles - len(self.file_queue)}/{self.totalFiles})")
-
-            next_file = self.file_queue.pop(0)
-            self.load_preview_file(next_file)
-            # 自动开始处理下一个文件
-            if self.mask_path:  # 如果有蒙版则自动处理
-                self.subtitle_processing()
-        else:
-            self.set_controls_enabled(True)
-            self.original_video.selection_rect = QRect()
-            self.original_video.update()
-            self.progress_bar.setValue(100)
-            self.progress_bar.setFormat(f"全部完成")
-            QMessageBox.information(self, "处理完成", "所有文件处理完成")
-            #删除遮罩文件
-            if os.path.exists(self.mask_path):
-                try:
-                    os.remove(self.mask_path)
-                    print(f"已删除文件: {self.mask_path}")
-                except OSError as e:
-                    print(f"删除文件 {self.mask_path} 失败: {e}")
-                    
-            self.mask_path = None
-        
         #多文件时，就不显示预览窗口了
         if self.totalFiles ==  1:
             self.previewVideo(output_path)
-                    
-            
+ 
     def previewVideo(self,output_path):
         # 加载处理结果预览
         if output_path:
@@ -928,12 +931,6 @@ class VideoProcessor(QMainWindow):
                     self.display_frame(frame, self.processed_video)
 
 if __name__ == "__main__":
-    # 打印环境信息
-    print("Python 版本:", platform.python_version()) 
-    print("torch 版本:", torch.__version__) 
-    print("是否支持CUDA: ", torch.cuda.is_available())
-    print("环境检测完毕")
-    
     app = QApplication(sys.argv)
     
     # 设置全局字体

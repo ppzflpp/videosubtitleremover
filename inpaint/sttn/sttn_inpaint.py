@@ -9,8 +9,6 @@ from typing import List
 import sys
 import shutil
 from tqdm import tqdm
-from PIL import Image
-from skimage import exposure
 
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -380,8 +378,12 @@ class STTNVideoInpaint:
         # 按50帧分批次处理
         count = len(cropped_frames) // batch_size + 1
         index = 0
-        for batch_idx in tqdm(range(0, len(cropped_frames), batch_size), 
-                    desc=f"处理中:共{len(cropped_frames)}帧"):
+
+        is_exe = getattr(sys, 'frozen', False)
+        # 定义可迭代对象（如果是 .exe 就用普通 range，否则用 tqdm）
+        iter_range = range(0, len(cropped_frames), batch_size) if is_exe else tqdm(range(0, len(cropped_frames), batch_size),desc=f"处理中:共{len(cropped_frames)}帧")
+
+        for batch_idx in iter_range:
             batch_frames = cropped_frames[batch_idx:batch_idx + batch_size]
             # 调用inpaint方法处理当前批次
             batch_inpainted = self.sttn_inpaint.inpaint(batch_frames, cropped_mask)
@@ -407,27 +409,25 @@ class STTNVideoInpaint:
             # 获取当前帧和修复区域
             original_frame = frames_hr[i]
             repaired_region = inpainted_frames[i]
-        
-            # 创建边缘过渡区域（模糊mask边缘）
-            blur_size = 5  # 可以调整这个值控制融合宽度
-            blurred_mask = cv2.GaussianBlur(cropped_mask.astype(np.float32), (blur_size, blur_size), 0)
-            # 对每个颜色通道处理
-            for c in range(3):
-                 # 原始图像区域
-                 original_region = original_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax, c]
-                 
-                 # 加权融合
-                 blended_region = (original_region * (1 - blurred_mask) + 
-                                 repaired_region[:, :, c] * blurred_mask)
-                 
-                 # 只替换mask区域（>0的部分）
-                 original_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax, c] = np.where(
-                     cropped_mask > 0,
-                     blended_region,
-                     original_region
-                 )
-            
-            writer.write(original_frame)
+
+            # 创建原始帧的副本用于融合
+            blended_frame = original_frame.copy()
+
+            # 获取修复区域在原始帧中的位置
+            repair_area = blended_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
+
+            # 将mask转换为3通道以便与RGB图像相乘
+            mask_3ch = np.stack([cropped_mask]*3, axis=-1)
+
+            # Alpha混合: 使用mask作为权重混合修复区域和原始区域
+            # repaired_region是修复好的区域，repair_area是原始区域
+            # 这里mask_3ch值为1的地方完全使用修复区域，0的地方完全使用原始区域
+            blended_region = (repaired_region * mask_3ch + repair_area * (1 - mask_3ch)).astype(np.uint8)
+
+            # 将混合后的区域放回原位置
+            blended_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax] = blended_region
+
+            writer.write(blended_frame)
 
         # 释放视频写入对象
         writer.release()

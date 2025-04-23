@@ -77,5 +77,5 @@ https://pan.baidu.com/s/1L1Hgc4kU9JXqbkFHNssQog?pwd=25ft 提取码: 25ft
 
 
 
-pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" --add-data="models/propainter/*;models/propainter" main.py
+pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" --add-data="models/propainter/*;models/propainter" --add-data="tools/ffmpeg/bin/*;tools/ffmpeg/bin/" main.py
 pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" main.py
