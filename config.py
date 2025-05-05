@@ -4,7 +4,7 @@ from torch import cuda ,device
 import os
 from enum import Enum, unique
 
-DEBUG = True
+DEBUG = False
 
 device = device("cuda:0" if cuda.is_available() else "cpu")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

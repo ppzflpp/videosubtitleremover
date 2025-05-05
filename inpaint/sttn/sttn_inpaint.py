@@ -276,14 +276,16 @@ class STTNVideoInpaint:
     def __call__(self):
         start_time = time.time()
         end_time = start_time
+
         # 读取视频帧信息
         reader, frame_info = self.read_frame_info_from_video()
 
         # STTNInpaint视频修复实例初始化
-        self.sttn_inpaint = STTNInpaint(self.use_vsr,self.callback)
+        self.sttn_inpaint = STTNInpaint(self.use_vsr, self.callback)
 
         # 创建视频写入对象，用于输出修复后的视频
         writer = cv2.VideoWriter(self.video_out_path, cv2.VideoWriter_fourcc(*"mp4v"), frame_info['fps'], (frame_info['W_ori'], frame_info['H_ori']))
+
         # 读取掩码
         mask = self.sttn_inpaint.read_mask(self.mask_path)
         
@@ -292,89 +294,90 @@ class STTNVideoInpaint:
         if len(mask.shape) == 3:  # 如果还是3维，取第一个通道
             mask = mask[:, :, 0]
 
- 
         # 计算裁剪区域
-        crop_ymin, crop_ymax, crop_xmin, crop_xmax = self.sttn_inpaint.get_cropped_area(mask,config.STTN_USE_ORI_IMAGE_FULL_SIZE)  
+        crop_ymin, crop_ymax, crop_xmin, crop_xmax = self.sttn_inpaint.get_cropped_area(mask, config.STTN_USE_ORI_IMAGE_FULL_SIZE)
         # 裁剪mask图
         cropped_mask = mask[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
-
-
-        
-        # 读取和修复高分辨率帧
-        frames_hr = []  # 高分辨率帧列表
-        cropped_frames = []  # 裁剪后的帧列表
-        while True:
-            success, frame = reader.read()
-            if not success:
-                break
-            frames_hr.append(frame)
-            # 裁剪原图
-            cropped_frame = frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
-            cropped_frames.append(cropped_frame)
 
         if config.DEBUG:
             print(f"STTNVideoInpaint,修复准备耗时：{(time.time() - end_time):.2f}秒")
             end_time = time.time()
-        
-        # 新增分批次处理逻辑 ##############################################
-        batch_size = config.STTN_MAX_LOAD_NUM
-        inpainted_frames = []
-        
-        # 按50帧分批次处理
-        count = len(cropped_frames) // batch_size + 1
-        index = 0
+
+        # 分批次处理逻辑
+        batch_size = 500  # 每个大批次处理500帧
+        sub_batch_size = 50  # 每个小批次处理50帧
+        total_frames = int(frame_info['len'])  # 总帧数
+        batch_count = total_frames // batch_size + (1 if total_frames % batch_size else 0)  # 总的大批次数
 
         is_exe = getattr(sys, 'frozen', False)
         # 定义可迭代对象（如果是 .exe 就用普通 range，否则用 tqdm）
-        iter_range = range(0, len(cropped_frames), batch_size) if is_exe else tqdm(range(0, len(cropped_frames), batch_size),desc=f"处理中:共{len(cropped_frames)}帧")
+        iter_range = range(batch_count) if is_exe else tqdm(range(batch_count), desc=f"处理中:共{total_frames}帧")
 
         for batch_idx in iter_range:
-            batch_frames = cropped_frames[batch_idx:batch_idx + batch_size]
-            # 调用inpaint方法处理当前批次
-            batch_inpainted = self.sttn_inpaint.inpaint(batch_frames, cropped_mask)
-            
-            # 合并修复结果
-            inpainted_frames.extend(batch_inpainted)
+            frames_hr = []  # 当前大批次的高分辨率帧列表
+            cropped_frames = []  # 当前大批次的裁剪后的帧列表
 
-            #更新进度条
-            index = index + 1
-            if self.callback:
-                progress = int( float(index) / float(count) * 100) 
-                if progress > 90:
-                    self.callback(90)
-                else :
-                    self.callback(progress)
-        
+            # 读取当前大批次的帧
+            for _ in range(batch_size):
+                success, frame = reader.read()
+                if not success:  # 如果读取失败，说明已经到视频末尾
+                    break
+                frames_hr.append(frame)
+                # 裁剪原图
+                cropped_frame = frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
+                cropped_frames.append(cropped_frame)
+
+            if not frames_hr:  # 如果当前大批次没有帧，说明已经处理完所有帧
+                break
+
+            # 在当前大批次内，按50帧的小批次处理
+            sub_batch_count = len(cropped_frames) // sub_batch_size + (1 if len(cropped_frames) % sub_batch_size else 0)
+            for sub_batch_idx in range(sub_batch_count):
+                sub_batch_frames = cropped_frames[sub_batch_idx * sub_batch_size:(sub_batch_idx + 1) * sub_batch_size]
+                # 调用inpaint方法处理当前小批次
+                sub_batch_inpainted = self.sttn_inpaint.inpaint(sub_batch_frames, cropped_mask)
+
+                # 将小批次的修复结果合并到大批次中
+                for i in range(len(sub_batch_frames)):
+                    original_frame = frames_hr[sub_batch_idx * sub_batch_size + i]
+                    repaired_region = sub_batch_inpainted[i]
+
+                    # 创建原始帧的副本用于融合
+                    blended_frame = original_frame.copy()
+
+                    # 获取修复区域在原始帧中的位置
+                    repair_area = blended_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
+
+                    # 将mask转换为3通道以便与RGB图像相乘
+                    mask_3ch = np.stack([cropped_mask] * 3, axis=-1)
+
+                    # Alpha混合: 使用mask作为权重混合修复区域和原始区域
+                    blended_region = (repaired_region * mask_3ch + repair_area * (1 - mask_3ch)).astype(np.uint8)
+
+                    # 将混合后的区域放回原位置
+                    blended_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax] = blended_region
+
+                    # 写入输出视频
+                    writer.write(blended_frame)
+
+
+                if self.callback:
+                    progress = int((batch_idx *  batch_size + sub_batch_idx * sub_batch_size + 3) / total_frames * 100)
+                    if progress > 90:
+                        self.callback(90)
+                    elif progress < 5:
+                        self.callback(5)
+                    else:
+                        self.callback(progress)
+
+
+
         if config.DEBUG:
             print(f"STTNVideoInpaint,修复耗时：{(time.time() - end_time):.2f}秒")
             end_time = time.time()
 
-        # 6. 自然融合修复区域（正确过渡带实现）
-        for i in range(len(frames_hr)):
-            # 获取当前帧和修复区域
-            original_frame = frames_hr[i]
-            repaired_region = inpainted_frames[i]
-
-            # 创建原始帧的副本用于融合
-            blended_frame = original_frame.copy()
-
-            # 获取修复区域在原始帧中的位置
-            repair_area = blended_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
-
-            # 将mask转换为3通道以便与RGB图像相乘
-            mask_3ch = np.stack([cropped_mask]*3, axis=-1)
-
-            # Alpha混合: 使用mask作为权重混合修复区域和原始区域
-            # repaired_region是修复好的区域，repair_area是原始区域
-            # 这里mask_3ch值为1的地方完全使用修复区域，0的地方完全使用原始区域
-            blended_region = (repaired_region * mask_3ch + repair_area * (1 - mask_3ch)).astype(np.uint8)
-
-            # 将混合后的区域放回原位置
-            blended_frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax] = blended_region
-
-            writer.write(blended_frame)
-
-        # 释放视频写入对象
+        # 释放视频读取和写入对象
+        reader.release()
         writer.release()
         self.callback(95)
 
