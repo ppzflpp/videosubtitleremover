@@ -19,12 +19,13 @@ from inpaint.propainter.propainter import ProPainter as PROPAINTER_PROCESSOR
 
 
 class InpaintManager:
-    def __init__(self, video_path, save_folder, mask_path, mode=config.InpaintMode.STTN, callback=None) -> None:
+    def __init__(self, video_path, save_folder, mask_path, mode=config.InpaintMode.STTN,child_mode="normal", callback=None) -> None:
         self.video_path = video_path
         self.save_folder = save_folder
         self.mask_path = mask_path
         self.callback = callback
         self.mode = mode
+        self.child_mode = child_mode
 
         self.video_out_path = self.get_unique_outpath(f"{os.path.basename(self.save_folder).rsplit('.', 1)[0]}_no_sub.mp4") 
 
@@ -46,11 +47,17 @@ class InpaintManager:
     def __call__(self):
         processor = None
         if self.mode.upper() == config.InpaintMode.STTN.value.upper():
-            processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
+            if self.child_mode == "normal":
+                processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,True,self.callback)
+            else:
+                processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,False,self.callback)
+
         elif self.mode.upper() == config.InpaintMode.LAMA.value.upper() :
             processor = LAMA_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
+
         elif self.mode.upper() == config.InpaintMode.PROPAINTER.value.upper(): 
             processor = PROPAINTER_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
+
         else :
             processor = STTN_PROCESSOR(self.video_path,self.video_out_path,self.mask_path,self.callback)
 

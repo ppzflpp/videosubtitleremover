@@ -8,3 +8,6 @@ videoRemover/*
 **/__pycache__/ 
 *.py[cod]
 *$py.class
+paddleOCR.py
+video2frame.py
+example/*

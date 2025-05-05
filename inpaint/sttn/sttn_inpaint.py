@@ -25,25 +25,33 @@ _to_tensors = transforms.Compose([
     ToTorchFormatTensor()  # 将堆叠的图像转化为PyTorch张量
 ])
 
-
-model_input_width = 432
-model_input_height = 240
-
-
 class STTNInpaint:
 
-    def __init__(self,callback=None):
+    def __init__(self,use_vsr=True,callback=None):
         # 模型输入用的宽和高
 
         self.device = config.device
+        self.use_vsr = use_vsr
 
         # 1. 创建InpaintGenerator模型实例并装载到选择的设备上
-        self.model = InpaintGenerator(model_input_width,model_input_height).to(self.device)
+        self.model = InpaintGenerator(self.use_vsr).to(self.device)
 
         # 2. 载入预训练模型的权重，转载模型的状态字典
-        self.model.load_state_dict(torch.load(config.STTN_MODEL_PATH, map_location=self.device)['netG'])
+        model_path = ""
+        if self.use_vsr:
+            self.model_input_width = 640
+            self.model_input_height = 120
+            model_path = config.VSR_STTN_MODEL_PATH
+        else:
+            self.model_input_width = 432
+            self.model_input_height = 240
+            model_path = config.OFF_STTN_MODEL_PATH
+
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device)['netG'])
         # 3. 将模型设置为评估模式
         self.model.eval()
+
+        print(f"STTNInpaint:use_vsr = {self.use_vsr},model_input_width = {self.model_input_width},model_input_height = {self.model_input_height},model_path = {model_path}")
 
         # 2. 设置相连帧数
         self.neighbor_stride = config.STTN_NEIGHBOR_STRIDE
@@ -78,32 +86,6 @@ class STTNInpaint:
         crop_xmin = max(0, xcenter - w // 2 - scale_size_w)
         crop_xmax = min(mask.shape[1], xcenter + w // 2 + scale_size_w)
         return crop_ymin, crop_ymax, crop_xmin, crop_xmax
-
-    def __call__(self, input_frames: List[np.ndarray], input_mask: np.ndarray):
-        """
-        :param input_frames: 原视频帧
-        :param input_mask: 字幕区域mask
-        """
-        _, mask = cv2.threshold(input_mask, 127, 1, cv2.THRESH_BINARY)
-        mask = mask[:, :, None]
-        H_ori, W_ori = mask.shape[:2]
-        H_ori = int(H_ori + 0.5)
-        W_ori = int(W_ori + 0.5)
-        # 计算裁剪区域
-        crop_ymin, crop_ymax, crop_xmin, crop_xmax = self.get_cropped_area(mask,True) 
-        # 初始化帧存储变量
-        frames_hr = copy.deepcopy(input_frames)
-        cropped_frames = []  # 存放裁剪后帧的列表
-        # 读取并裁剪帧
-        for frame in frames_hr:
-            cropped_frame = frame[crop_ymin:crop_ymax, crop_xmin:crop_xmax]
-            cropped_frames.append(cropped_frame)
-        # 调用inpaint函数进行处理
-        inpainted_frames = self.inpaint(cropped_frames, mask)
-        # 将修复后的帧放回原图
-        for i in range(len(frames_hr)):
-            frames_hr[i][crop_ymin:crop_ymax, crop_xmin:crop_xmax] = inpainted_frames[i]
-        return frames_hr
 
     @staticmethod
     def read_mask(path):
@@ -152,10 +134,10 @@ class STTNInpaint:
         # 缩放 frames 和 mask 到模型需要的尺寸
         resized_frames = [None] * frame_length
         for i, frame in enumerate(frames):
-            resized_frames[i] = cv2.resize(frame, (model_input_width, model_input_height), 
+            resized_frames[i] = cv2.resize(frame, (self.model_input_width, self.model_input_height), 
                                         interpolation=cv2.INTER_LINEAR)
                             
-        resized_mask = cv2.resize(mask, (model_input_width, model_input_height), interpolation=cv2.INTER_NEAREST)                   
+        resized_mask = cv2.resize(mask, (self.model_input_width, self.model_input_height), interpolation=cv2.INTER_NEAREST)                   
 
         # 预处理二进制掩码（提前计算）
         binary_mask = (resized_mask.squeeze() != 0).astype(np.uint8)
@@ -182,25 +164,20 @@ class STTNInpaint:
         # 把特征张量转移到指定的设备（CPU或GPU）
         feats, mask_tensor = feats.to(self.device), mask_tensor.to(self.device)
 
-        if config.DEBUG:
-            print(f"STTNInpaint,【修复中】预处理1耗时：{(time.time() - end_time):.2f}秒")
-            end_time = time.time()
-
         # 初始化一个与视频长度相同的列表，用于存储处理完成的帧
         comp_frames = [None] * frame_length
         
         # 关闭梯度计算，用于推理阶段节省内存并加速
         with torch.no_grad():
             # 将处理好的帧通过编码器，产生特征表示
-            feats = self.model.encoder((feats * (1 - mask_tensor).float()).view(frame_length, 3, model_input_height, model_input_width))
+            if self.use_vsr:
+                feats = self.model.encoder(feats.view(frame_length, 3, self.model_input_height, self.model_input_width))
+            else:
+                feats = self.model.encoder((feats * (1 - mask_tensor).float()).view(frame_length, 3, self.model_input_height, self.model_input_width))
             # 获取特征维度信息
             _, c, feat_h, feat_w = feats.size()
             # 调整特征形状以匹配模型的期望输入
             feats = feats.view(1, frame_length, c, feat_h, feat_w)
-
-        if config.DEBUG:
-            print(f"STTNInpaint,【修复中】预处理2耗时：{(time.time() - end_time):.2f}秒")
-            end_time = time.time()
 
         # 获取重绘区域
         # 在设定的邻居帧步幅内循环处理视频
@@ -211,28 +188,16 @@ class STTNInpaint:
             neighbor_ids = [i for i in range(max(0, f - self.neighbor_stride), min(frame_length, f + self.neighbor_stride + 1))]
             # 获取参考帧的索引
             ref_ids = self.get_ref_index(neighbor_ids, frame_length)
-            
-            if config.DEBUG:
-                print(f"STTNInpaint,【修复中】修复第{f}帧,【步骤1】耗时： :  {(time.time() - end_time):.2f}秒")
-                end_time = time.time()
 
             # 同样关闭梯度计算
             with torch.no_grad():
-                if config.DEBUG:
-                    print(f"STTNInpaint,【修复中】修复第{f}帧,【步骤2】耗时： :  {(time.time() - end_time):.2f}秒")
-                    end_time = time.time()
-
                 # 通过模型推断特征并传递给解码器以生成完成的帧
                 #pred_feat = self.model.infer(feats[0, neighbor_ids + ref_ids, :, :, :], mask_tensor[0, neighbor_ids + ref_ids, :, :, :])
                 # 使用内存高效的推断方式
-                pred_feat = self.model.infer(
+                pred_feat = self.model.infer( 
                     feats[0, neighbor_ids + ref_ids], 
                     mask_tensor[0, neighbor_ids + ref_ids]
                 )
-
-                if config.DEBUG:
-                    print(f"STTNInpaint,【修复中】修复第{f}帧,【步骤3】耗时： :  {(time.time() - end_time):.2f}秒")
-                    end_time = time.time()
 
                 # 将预测的特征通过解码器生成图片，并应用激活函数tanh，然后分离出张量；解码并立即移回CPU
                 pred_img = torch.tanh(self.model.decoder(pred_feat[:len(neighbor_ids)])).detach()
@@ -241,10 +206,6 @@ class STTNInpaint:
 
                 # 释放中间变量
                 del pred_feat
-
-                if config.DEBUG:
-                    print(f"STTNInpaint,【修复中】修复第{f}帧,【步骤4】耗时： :  {(time.time() - end_time):.2f}秒")
-                    end_time = time.time()
 
                 # 混合处理
                 for i, idx in enumerate(neighbor_ids):
@@ -289,14 +250,6 @@ class STTNInpaint:
 
 class STTNVideoInpaint:
 
-    def changeOritation(self,width,height):
-        global model_input_width
-        global model_input_height
-        if width < height:
-            tmp = model_input_width
-            model_input_width = model_input_height
-            model_input_height = tmp
-
     def read_frame_info_from_video(self):
         # 使用opencv读取视频
         reader = cv2.VideoCapture(self.video_path)
@@ -310,7 +263,7 @@ class STTNVideoInpaint:
         # 返回视频读取对象、帧信息和视频写入对象
         return reader, frame_info
 
-    def __init__(self, video_path, video_out_path, mask_path=None, callback=None):
+    def __init__(self, video_path, video_out_path, mask_path=None, use_vsr=True,callback=None):
         # 视频和掩码路径
         self.video_path = video_path
         self.mask_path = mask_path
@@ -318,36 +271,28 @@ class STTNVideoInpaint:
         # 设置输出视频文件的路径
         self.video_out_path = video_out_path
 
-        self.clip_gap = config.STTN_MAX_LOAD_NUM
+        self.use_vsr = use_vsr
 
-    def __call__(self, input_mask=None, input_sub_remover=None, tbar=None):
+    def __call__(self):
         start_time = time.time()
         end_time = start_time
         # 读取视频帧信息
         reader, frame_info = self.read_frame_info_from_video()
-        self.changeOritation(frame_info['W_ori'], frame_info['H_ori'])
 
         # STTNInpaint视频修复实例初始化
-        self.sttn_inpaint = STTNInpaint(self.callback)
+        self.sttn_inpaint = STTNInpaint(self.use_vsr,self.callback)
 
-        if input_sub_remover is not None:
-            writer = input_sub_remover.video_writer
-        else:
-            # 创建视频写入对象，用于输出修复后的视频
-            writer = cv2.VideoWriter(self.video_out_path, cv2.VideoWriter_fourcc(*"mp4v"), frame_info['fps'], (frame_info['W_ori'], frame_info['H_ori']))
+        # 创建视频写入对象，用于输出修复后的视频
+        writer = cv2.VideoWriter(self.video_out_path, cv2.VideoWriter_fourcc(*"mp4v"), frame_info['fps'], (frame_info['W_ori'], frame_info['H_ori']))
         # 读取掩码
-        if input_mask is None:
-            mask = self.sttn_inpaint.read_mask(self.mask_path)
-        else:
-            _, mask = cv2.threshold(input_mask, 127, 1, cv2.THRESH_BINARY)
-            mask = mask[:, :, None]
+        mask = self.sttn_inpaint.read_mask(self.mask_path)
         
         # 强制转为2维(H,W)
         mask = mask.squeeze()
         if len(mask.shape) == 3:  # 如果还是3维，取第一个通道
             mask = mask[:, :, 0]
 
-
+ 
         # 计算裁剪区域
         crop_ymin, crop_ymax, crop_xmin, crop_xmax = self.sttn_inpaint.get_cropped_area(mask,config.STTN_USE_ORI_IMAGE_FULL_SIZE)  
         # 裁剪mask图

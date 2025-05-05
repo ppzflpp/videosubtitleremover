@@ -46,7 +46,6 @@ pip install ffmpeg-python -i https://pypi.tuna.tsinghua.edu.cn/simple
 5、python main.py
 
 
-
 注意：
 1、视频所在路径不要包含中文，并且视频名字也不能包含中文
 2、由于模型文件超过100M直接传不上来，需要单独下载模型文件放到model文件夹下，我都放到百度网盘了。下载的model文件夹直接覆盖目前github代码里面的model文件夹即可
@@ -73,9 +72,17 @@ https://pan.baidu.com/s/1L1Hgc4kU9JXqbkFHNssQog?pwd=25ft 提取码: 25ft
 
 
 
+版本信息:
+V2.0
+    1、增加普通模式和强力模式
+        普通模式：使用VSR算法，效果同VSR
+        强力模式：可以去除VSR去不掉的场景
+    2、解决BUG
+    3、优化用户体验，增加去字幕完成后，打开文件夹功能
 
 
 
 
-pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" --add-data="models/propainter/*;models/propainter" --add-data="tools/ffmpeg/bin/*;tools/ffmpeg/bin/" main.py
+
+pyinstaller   --add-data="models/sttn/*;models/sttn" --add-data="models/big-lama/*;models/big-lama" --add-data="models/propainter/*;models/propainter" --add-data="tools/ffmpeg/bin/*;tools/ffmpeg/bin/" main.py
 pyinstaller --windowed  --add-data="models/sttn/*;models/sttn" main.py

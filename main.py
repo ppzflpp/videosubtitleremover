@@ -20,13 +20,14 @@ class VideoProcessingThread(QThread):
     """处理视频的线程"""
     finished = pyqtSignal(str, int,int)  # 定义信号，用于通知主线程处理完成
 
-    def __init__(self,parent, video_path, save_folder,mask_path,mode):
+    def __init__(self,parent, video_path, save_folder,mask_path,mode,child_mode):
         super().__init__()
         self.video_processor = parent
         self.video_path = video_path
         self.save_folder = save_folder
         self.mask_path = mask_path
         self.mode = mode
+        self.child_mode = child_mode
     
     def update(self,progress):
         # 发射信号
@@ -42,7 +43,7 @@ class VideoProcessingThread(QThread):
         # 记录开始时间
         start = time.time()
         # 模拟耗时操作
-        manager = InpaintManager(self.video_path, self.save_folder,self.mask_path,mode=self.mode,callback=self.update)
+        manager = InpaintManager(self.video_path, self.save_folder,self.mask_path,self.mode,self.child_mode,callback=self.update)
         manager()
         
         # 记录结束时间
@@ -216,8 +217,7 @@ class VideoProcessor(QMainWindow):
         self.file_queue = []  # 新增文件队列
         self.is_processing_queue = False  # 新增队列处理标志
         self.totalFiles = len(self.file_queue)
-        self.current_algo_mode = config.InpaintMode.STTN
-        self.current_algo_mode = self.settings.value("InpaintMode", "sttn")  # 默认 STTN
+        self.current_algo_mode = self.settings.value("InpaintMode", "STTN")  # 默认 STTN
 
         # 添加计时相关变量
         self.process_start_time = None
@@ -313,9 +313,9 @@ class VideoProcessor(QMainWindow):
 
     def setup_home_ui(self):
         """首页UI - 原有内容移到这里"""
-        self.home_widget.setAttribute(Qt.WA_StyledBackground)  # ← 新增
+        self.home_widget.setAttribute(Qt.WA_StyledBackground)  # 新增
         layout = QVBoxLayout(self.home_widget)
-        layout.setContentsMargins(50, 50, 50,50)
+        layout.setContentsMargins(50, 50, 50, 50)
         
         # 视频帧区域
         video_area = QHBoxLayout()
@@ -326,17 +326,75 @@ class VideoProcessor(QMainWindow):
         self.original_video = VideoFrame(parent=self)
         video_area.addWidget(self.original_video)
         
-        
         # 处理后视频
         self.processed_video = VideoFrame(parent=self)
         video_area.addWidget(self.processed_video)
         
         layout.addLayout(video_area)
+        
+        # 创建一个浮动的模式选择区域
+        self.mode_frame = QFrame(self.original_video)  # 模式选择区域浮动在原始视频上方
+        self.mode_frame.setFrameShape(QFrame.Shape.NoFrame)  # 无边框
+        self.mode_frame.setStyleSheet("""
+            QFrame {
+                background-color: rgba(0, 0, 0, 0); /* 完全透明背景 */
+                border: none; /* 无边框 */
+            }
+        """)
+        self.mode_frame.setFixedHeight(60)  # 固定高度为 60 像素
 
+        # 创建一个水平布局，用于放置按钮
+        mode_area = QHBoxLayout(self.mode_frame)
+        mode_area.setSpacing(0)
+        
+        # 固定按钮大小
+        button_width = 60
+        button_height = 30
+
+        self.normal_mode_btn = QPushButton("普通模式")
+        self.normal_mode_btn.setFixedSize(button_width, button_height)  # 固定按钮大小
+        self.normal_mode_btn.clicked.connect(lambda: self.toggle_mode("normal"))
+        self.normal_mode_btn.setStyleSheet("""
+            QPushButton {
+                padding: 0;
+                background-color: rgba(255, 255, 255, 90); /* 半透明背景 */
+                border: none; /* 无边框 */
+                border-radius: 0px; /* 去掉圆角 */
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 180); /* 鼠标悬停时的透明度更高 */
+            }
+        """)
+        mode_area.addWidget(self.normal_mode_btn)
+        
+        self.strong_mode_btn = QPushButton("强力模式")
+        self.strong_mode_btn.setFixedSize(button_width, button_height)  # 固定按钮大小
+        self.strong_mode_btn.clicked.connect(lambda: self.toggle_mode("strong"))
+        self.strong_mode_btn.setStyleSheet("""
+            QPushButton {
+                padding: 0;
+                background-color: rgba(255, 255, 255, 90); /* 半透明背景 */
+                border: none; /* 无边框 */
+                border-radius: 0px; /* 去掉圆角 */
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 180); /* 鼠标悬停时的透明度更高 */
+            }
+        """)
+        mode_area.addWidget(self.strong_mode_btn)
+        
+        # 让 mode_area 居中显示在 self.mode_frame 中
+        mode_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # 将 self.mode_frame 添加到 self.original_video 的布局中
+        self.original_video_layout = QVBoxLayout(self.original_video)
+        self.original_video_layout.setContentsMargins(0, 0, 0, 0)
+        self.original_video_layout.setSpacing(0)
+        self.original_video_layout.addWidget(self.mode_frame, alignment=Qt.AlignmentFlag.AlignTop)
         
         # 进度标签和滑块
         self.progress_label = QLabel("00:00:00 / 00:00:00")
-        layout.addWidget(self.progress_label,alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.progress_label, alignment=Qt.AlignmentFlag.AlignCenter)
         self.progress_slider = QSlider(Qt.Horizontal)
         self.progress_slider.setStyleSheet("""
                 QSlider::groove:horizontal {
@@ -344,13 +402,13 @@ class VideoProcessor(QMainWindow):
                     background: #ddd;  /* 未滑过区域颜色 */
                 }
                 QSlider::sub-page:horizontal {
-                    background: #3396ff;  /* 已滑过区域颜色（绿色） */
+                    background: #3396ff;  /* 已滑过区域颜色 */
                 }
                 QSlider::handle:horizontal {
                     width: 12px;          /* 圆形直径 */
                     height: 18px;         /* 圆形直径 */
                     margin: -4px 0;       /* 垂直居中 */
-                    background: #3396FF;  /* 直接填充为边框颜色（无白色背景） */
+                    background: #3396FF;  /* 直接填充为边框颜色 */
                     border: none;        /* 移除边框 */
                 }
             """)
@@ -362,8 +420,8 @@ class VideoProcessor(QMainWindow):
 
         spacer = QSpacerItem(50, 50, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         layout.addSpacerItem(spacer)
-
-          # 按钮区域
+        
+        # 按钮区域
         button_area = QHBoxLayout()
         button_area.setContentsMargins(0, 0, 0, 0)
         
@@ -421,6 +479,57 @@ class VideoProcessor(QMainWindow):
         self.play_btn.setEnabled(False)
         self.process_btn.setEnabled(False)
         self.progress_slider.setEnabled(False)
+
+        if self.current_algo_mode == "STTN":
+            self.mode_frame.show()
+        else:
+            self.mode_frame.hide()
+
+        self.current_child_mode = "normal"  # 默认模式为普通模式
+        self.toggle_mode("normal")  # 初始化模式按钮状态
+
+    def toggle_mode(self, mode):
+        """切换模式并更新按钮背景"""
+        if mode == "normal":
+            self.normal_mode_btn.setStyleSheet("""
+                QPushButton {
+                    padding: 0;
+                    font-size: 12px;
+                    background-color: rgba(255, 255, 255, 180); /* 选中状态透明度更高 */
+                    border: none; /* 无边框 */
+                    border-radius: 0px; /* 去掉圆角 */
+                }
+            """)
+            self.strong_mode_btn.setStyleSheet("""
+                QPushButton {
+                    padding: 0;
+                    font-size: 12px;
+                    background-color: rgba(255, 255, 255, 90); /* 默认透明度 */
+                    border: none; /* 无边框 */
+                    border-radius: 0px; /* 去掉圆角 */
+                }
+            """)
+            self.current_child_mode = "normal"
+        elif mode == "strong":
+            self.normal_mode_btn.setStyleSheet("""
+                QPushButton {
+                    padding: 0;
+                    font-size: 12px;
+                    background-color: rgba(255, 255, 255, 90); /* 默认透明度 */
+                    border: none; /* 无边框 */
+                    border-radius: 0px; /* 去掉圆角 */
+                }
+            """)
+            self.strong_mode_btn.setStyleSheet("""
+                QPushButton {
+                    padding: 0;
+                    font-size: 12px;
+                    background-color: rgba(255, 255, 255, 180); /* 选中状态透明度更高 */
+                    border: none; /* 无边框 */
+                    border-radius: 0px; /* 去掉圆角 */
+                }
+            """)
+            self.current_child_mode = "strong"
     
     def setup_settings_ui(self):
         """设置页面UI"""
@@ -573,6 +682,11 @@ class VideoProcessor(QMainWindow):
         # 保存算法模式
         self.settings.setValue("InpaintMode", self.current_algo_mode)
         
+        if self.current_algo_mode == "STTN":
+            self.mode_frame.show()
+        else :
+            self.mode_frame.hide()
+
         # 保存路径（如果用户未选择，则保存空字符串）
         self.settings.setValue("SaveFolder", self.save_folder if self.save_folder else "")
         
@@ -751,8 +865,31 @@ class VideoProcessor(QMainWindow):
                 except OSError as e:
                     print(f"删除文件 {self.mask_path} 失败: {e}")       
             self.mask_path = None
+
             #弹窗提醒
-            QMessageBox.information(self, "处理完成", "所有文件处理完成")
+            # 创建一个 QMessageBox
+            message_box = QMessageBox(self)
+            # 设置消息框的标题和内容
+            message_box.setWindowTitle("处理完成")
+            message_box.setText("所有文件处理完成")
+            # 添加自定义按钮
+            open_folder_button = QPushButton("打开文件夹")
+            message_box.addButton(open_folder_button, QMessageBox.AcceptRole)
+
+            # 可选：添加其他按钮
+            cancel_button = QPushButton("关闭")
+            message_box.addButton(cancel_button, QMessageBox.RejectRole)
+            # 显示消息框并获取用户的选择
+            result = message_box.exec_()
+            # 根据用户的选择执行不同的操作
+            if result == QMessageBox.AcceptRole:
+                try:
+                    os.startfile(self.save_folder)  
+                except Exception as e:
+                    print(f"打开文件夹时出错: {e}")
+                message_box.close()
+            elif result == QMessageBox.RejectRole:
+                message_box.close()
 
 
     def releaseResource(self):
@@ -892,7 +1029,7 @@ class VideoProcessor(QMainWindow):
 
     def subtitle_processing(self,file_path,save_folder,mask_path):
             # 启动处理线程
-            self.processing_thread = VideoProcessingThread(self, file_path, save_folder, mask_path, self.current_algo_mode)
+            self.processing_thread = VideoProcessingThread(self, file_path, save_folder, mask_path, self.current_algo_mode,self.current_child_mode)
             self.processing_thread.finished.connect(self.processing_finished)
             self.processing_thread.start()
     
