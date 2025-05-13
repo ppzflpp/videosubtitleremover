@@ -68,8 +68,8 @@ class InpaintGenerator(BaseNetwork):
         stack_num = 8
         #官方的图片用这个参数
         #patchsize = [(108, 60), (36, 20), (18, 10), (9, 5)]
-        # 360*720 参数
-        patchsize = [(90, 180)]
+        # 960*540 参数
+        patchsize = [(128, 72),(64, 36),(32, 18),(16, 9)]
         blocks = []
         for _ in range(stack_num):
             blocks.append(TransformerBlock(patchsize, hidden=channel))

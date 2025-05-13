@@ -18,6 +18,7 @@ from skimage.color import rgb2gray, gray2rgb
 from core.utils import ZipReader, create_random_shape_with_random_motion
 from core.utils import Stack, ToTorchFormatTensor, GroupRandomHorizontalFlip
 
+from .randam_subtitle import add_random_subtitle_to_frame
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, args: dict, split='train', debug=False):
@@ -50,6 +51,7 @@ class Dataset(torch.utils.data.Dataset):
     def load_item(self, index):
         video_name = self.video_names[index]
         all_frames = [f"{str(i).zfill(5)}.jpg" for i in range(self.video_dict[video_name])]
+
         all_masks = create_random_shape_with_random_motion(
             len(all_frames), imageHeight=self.h, imageWidth=self.w)
 
@@ -69,11 +71,24 @@ class Dataset(torch.utils.data.Dataset):
         for idx in ref_index:
             img = ZipReader.imread('{}/{}/JPEGImages/{}.zip'.format(
                 self.args['data_root'], self.args['name'], video_name), all_frames[idx]).convert('RGB')
+            
             img = img.resize(self.size)
+            ###begin
+            img = np.array(img)
+            frame_with_subtitle, text_mask = add_random_subtitle_to_frame(img,idx, self.w, self.h)
+            img = Image.fromarray(frame_with_subtitle)
             frames.append(img)
-            masks.append(all_masks[idx])
-        if self.split == 'train':
-            frames = GroupRandomHorizontalFlip()(frames)
+
+
+            text_mask = Image.fromarray(text_mask)
+            masks.append(text_mask)
+            ###end
+            #frames.append(img)
+            #masks.append(all_masks[idx])
+
+        #if self.split == 'train':
+            #frames = GroupRandomHorizontalFlip()(frames)
+
         # To tensors
         frame_tensors = self._to_tensors(frames)*2.0 - 1.0
         mask_tensors = self._to_tensors(masks)

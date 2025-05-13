@@ -10,4 +10,8 @@ videoRemover/*
 *$py.class
 paddleOCR.py
 video2frame.py
+folder2zip.py
 example/*
+inpaint/lama/__pycache__
+myenv/*
+train/sttn/datasets/davis/JPEGImages/
