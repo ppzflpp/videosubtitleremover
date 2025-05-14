@@ -1,0 +1,25 @@
+#非50系显卡执行这个
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+#50系显卡执行这个
+#pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+
+
+pip install opencv-python  -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install matplotlib  -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install PyQt5  -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install scipy -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install einops -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install av -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install tqdm -i https://pypi.tuna.tsinghua.edu.cn/simple
+#用来把原始视频里面的音频文件合并到目标文件中去
+pip install ffmpeg-python -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install tqdm -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+
+
+#训练模型用，推理不需要
+#pip install tensorboard -i https://pypi.tuna.tsinghua.edu.cn/simple
+#pip install scikit-image -i https://pypi.tuna.tsinghua.edu.cn/simple
+#训练时增加随机字幕用
+#pip install moviepy -i  https://pypi.tuna.tsinghua.edu.cn/simple  
+
