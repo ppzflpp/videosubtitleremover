@@ -4,8 +4,9 @@ import sys
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint,QSize,QSettings,QThread, pyqtSignal
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QPushButton, QProgressBar, QFileDialog, 
-                            QLabel, QFrame, QSizePolicy, QSlider, QSizeGrip,QMessageBox,QStackedWidget,QGroupBox,QRadioButton,QSpacerItem,QLineEdit)
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QMouseEvent, QColor,QFont
+                            QLabel, QFrame, QSizePolicy, QSlider, QSizeGrip,QMessageBox,QStackedWidget,QGroupBox,QRadioButton,QSpacerItem,QLineEdit,QSplitter)
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QMouseEvent, QColor,QFont,QScreen
+
 import cv2
 import numpy as np
 import os
@@ -70,13 +71,19 @@ class VideoFrame(QLabel):
         self.start_pos = QPoint()
         self.current_frame = None
         self.scale_factor = 1.0
-        self.setMinimumSize(500, 800)
-        self.resize(500, 800)
+        self.setMinimumSize(int(SCREEN_WIDTH * 0.1), int(SCREEN_WIDTH * 0.1))
+        self.resize(int(SCREEN_WIDTH * 0.2), int(SCREEN_HEIGHT * 0.4))
         self.video_path = None
         self.video_cap = None
         self.frame_count = 0
         self.fps = 0
-        
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # 重新设置内容的大小
+        if self.current_frame is not None:
+            self.set_frame(self.current_frame)
+
     def set_frame(self, frame):
         self.current_frame = frame
         if frame is not None:
@@ -111,9 +118,6 @@ class VideoFrame(QLabel):
             self.update()
     
     def mouseReleaseEvent(self, event):
-
-
-
         if self.dragging and self.pixmap():
             self.dragging = False
             if self.selection_rect.width() > 10 and self.selection_rect.height() > 10:
@@ -207,7 +211,7 @@ class VideoProcessor(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("飞鱼去字幕")
-        self.setGeometry(500, 500, 500, 800) 
+        self.setGeometry(int(SCREEN_WIDTH * 0.2), int(SCREEN_HEIGHT * 0.2), int(SCREEN_WIDTH * 0.2), int(SCREEN_HEIGHT * 0.4))
         self.settings = QSettings("VideoSubTitleRemover", "dragon")
         self.last_opened_path = self.settings.value("last_opened_path", "")
         self.save_folder = self.settings.value("SaveFolder", "")
@@ -237,10 +241,11 @@ class VideoProcessor(QMainWindow):
         left_nav = QFrame()
         left_nav.setFrameShape(QFrame.StyledPanel)
         left_nav.setStyleSheet("background-color: #f0f0f0;")
-        left_nav.setFixedWidth(200)
+        left_nav.setMinimumWidth(int(SCREEN_WIDTH * 0.05))
+        left_nav.setMaximumWidth(int(SCREEN_WIDTH * 0.15))
         left_nav_layout = QVBoxLayout(left_nav)
-        left_nav_layout.setContentsMargins(10, 20, 10, 20)
-        left_nav_layout.setSpacing(15)
+        left_nav_layout.setContentsMargins(to(10), to(20), to(10), to(20))
+        left_nav_layout.setSpacing(to(15))
         
         # 首页按钮
         self.home_btn = QPushButton("首页")
@@ -249,10 +254,10 @@ class VideoProcessor(QMainWindow):
         self.home_btn.setStyleSheet("""
             QPushButton {
                 padding: 12px;
-                font-size: 20px;
+                font-size: 20em;
                 text-align: left;
                 border: none;
-                border-radius: 5px;
+                border-radius: 5em;
             }
             QPushButton:checked {
                 background-color: #d0d0d0;
@@ -287,10 +292,18 @@ class VideoProcessor(QMainWindow):
         
         self.right_stack.addWidget(self.home_widget)
         self.right_stack.addWidget(self.settings_widget)
-        
+
+        # 使用 QSplitter
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(left_nav)
+        splitter.addWidget(self.right_stack)
+        splitter.setStretchFactor(0, 1)  # 左侧导航栏可以伸缩
+        splitter.setStretchFactor(1, 4)  # 右侧内容区域可以伸缩
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+
         # 添加到主布局
-        main_layout.addWidget(left_nav)
-        main_layout.addWidget(self.right_stack)
+        main_layout.addWidget(splitter)
         
         # 其他初始化
         self.play_timer = QTimer(self)
@@ -315,12 +328,12 @@ class VideoProcessor(QMainWindow):
         """首页UI - 原有内容移到这里"""
         self.home_widget.setAttribute(Qt.WA_StyledBackground)  # 新增
         layout = QVBoxLayout(self.home_widget)
-        layout.setContentsMargins(50, 50, 50, 50)
+        layout.setContentsMargins(to(50), to(50), to(50), to(50))
         
         # 视频帧区域
         video_area = QHBoxLayout()
         video_area.setContentsMargins(0, 0, 0, 0)
-        video_area.setSpacing(20)
+        video_area.setSpacing(to(20))
         
         # 原始视频
         self.original_video = VideoFrame(parent=self)
@@ -329,6 +342,9 @@ class VideoProcessor(QMainWindow):
         # 处理后视频
         self.processed_video = VideoFrame(parent=self)
         video_area.addWidget(self.processed_video)
+
+        video_area.setStretch(0, 1)
+        video_area.setStretch(1, 1)
         
         layout.addLayout(video_area)
         
@@ -373,6 +389,7 @@ class VideoProcessor(QMainWindow):
         self.strong_mode_btn.setStyleSheet("""
             QPushButton {
                 padding: 0;
+                font-size: 5em;
                 background-color: rgba(255, 255, 255, 90); /* 半透明背景 */
                 border: none; /* 无边框 */
                 border-radius: 0px; /* 去掉圆角 */
@@ -418,19 +435,21 @@ class VideoProcessor(QMainWindow):
         self.progress_slider.setEnabled(False)
         layout.addWidget(self.progress_slider)
 
-        spacer = QSpacerItem(50, 50, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        spacer = QSpacerItem(to(50), to(50), QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         layout.addSpacerItem(spacer)
         
         # 按钮区域
         button_area = QHBoxLayout()
-        button_area.setContentsMargins(0, 0, 0, 0)
+
+        left_spacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        button_area.addSpacerItem(left_spacer)
         
         self.open_btn = QPushButton("打开视频")
         self.open_btn.clicked.connect(self.open_video)
         self.open_btn.setStyleSheet("""
             QPushButton {
                 padding: 15px 60px;
-                font-size: 20px;
+                font-size: 20em;
             }
         """)
         button_area.addWidget(self.open_btn)
@@ -440,7 +459,7 @@ class VideoProcessor(QMainWindow):
         self.play_btn.setStyleSheet("""
             QPushButton {
                 padding: 15px 60px;
-                font-size: 20px;
+                font-size: 20em;
             }
         """)
         button_area.addWidget(self.play_btn)
@@ -450,13 +469,25 @@ class VideoProcessor(QMainWindow):
         self.process_btn.setStyleSheet("""
             QPushButton {
                 padding: 15px 60px;
-                font-size: 20px;
+                font-size: 20em;
             }
         """)
         button_area.addWidget(self.process_btn)
+
+        right_spacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        button_area.addSpacerItem(right_spacer)
+
+        button_area.setStretch(0, 2)  
+        button_area.setStretch(1, 2)  
+        button_area.setStretch(2, 2) 
+        button_area.setStretch(3, 2) 
+        button_area.setStretch(4, 2) 
+
+
+
         layout.addLayout(button_area)
 
-        spacer = QSpacerItem(50, 50, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        spacer = QSpacerItem(to(50), to(50), QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         layout.addSpacerItem(spacer)
         
         # 处理进度条
@@ -494,7 +525,7 @@ class VideoProcessor(QMainWindow):
             self.normal_mode_btn.setStyleSheet("""
                 QPushButton {
                     padding: 0;
-                    font-size: 12px;
+                    font-size: 5em;
                     background-color: rgba(255, 255, 255, 180); /* 选中状态透明度更高 */
                     border: none; /* 无边框 */
                     border-radius: 0px; /* 去掉圆角 */
@@ -503,7 +534,7 @@ class VideoProcessor(QMainWindow):
             self.strong_mode_btn.setStyleSheet("""
                 QPushButton {
                     padding: 0;
-                    font-size: 12px;
+                    font-size: 5em;
                     background-color: rgba(255, 255, 255, 90); /* 默认透明度 */
                     border: none; /* 无边框 */
                     border-radius: 0px; /* 去掉圆角 */
@@ -514,7 +545,7 @@ class VideoProcessor(QMainWindow):
             self.normal_mode_btn.setStyleSheet("""
                 QPushButton {
                     padding: 0;
-                    font-size: 12px;
+                    font-size: 5em;
                     background-color: rgba(255, 255, 255, 90); /* 默认透明度 */
                     border: none; /* 无边框 */
                     border-radius: 0px; /* 去掉圆角 */
@@ -523,7 +554,7 @@ class VideoProcessor(QMainWindow):
             self.strong_mode_btn.setStyleSheet("""
                 QPushButton {
                     padding: 0;
-                    font-size: 12px;
+                    font-size: 5em;
                     background-color: rgba(255, 255, 255, 180); /* 选中状态透明度更高 */
                     border: none; /* 无边框 */
                     border-radius: 0px; /* 去掉圆角 */
@@ -534,14 +565,14 @@ class VideoProcessor(QMainWindow):
     def setup_settings_ui(self):
         """设置页面UI"""
         layout = QVBoxLayout(self.settings_widget)
-        layout.setContentsMargins(50, 50, 50, 50)
-        layout.setSpacing(30)
+        layout.setContentsMargins(to(50), to(50), to(50), to(50))
+        layout.setSpacing(to(30))
         
         # 算法选择组
         algo_group = QGroupBox("修复算法选择")
         algo_group.setStyleSheet("""
             QGroupBox {
-                font-size: 18px;
+                font-size: 18em;
                 border: 1px solid #ccc;
                 border-radius: 5px;
                 margin-top: 15px;
@@ -574,7 +605,7 @@ class VideoProcessor(QMainWindow):
         algo_layout.addWidget(self.radio_sttn)
         algo_layout.addWidget(self.radio_propainter)
         algo_layout.addWidget(self.radio_lama)
-        algo_layout.addSpacing(15)
+        algo_layout.addSpacing(to(15))
         
         # 算法说明
         algo_desc = QLabel(
@@ -582,7 +613,7 @@ class VideoProcessor(QMainWindow):
             "Propainter: 适合处理动态字幕\n"
             "Lama: 适合静态字幕和复杂背景修复（推荐图片处理）"
         )
-        algo_desc.setStyleSheet("color: #666; font-size: 16px;")
+        algo_desc.setStyleSheet("color: #666; font-size: 16em;")
         algo_layout.addWidget(algo_desc)
         
         algo_group.setLayout(algo_layout)
@@ -605,7 +636,7 @@ class VideoProcessor(QMainWindow):
                 height: 36px;
                 border: none;
                 background: white;
-                font-size: 16px;
+                font-size: 16em;
                 color: #666;
             }
         """)
@@ -648,7 +679,7 @@ class VideoProcessor(QMainWindow):
                 f"     是否支持CUDA: {torch.cuda.is_available()}"
         self.environmentLabel = QLabel(environmentString)
         font = QFont()
-        font.setPointSize(6)
+        font.setPointSize(to(6))
         self.environmentLabel.setFont(font)
 
         layout.addWidget(self.environmentLabel)
@@ -718,9 +749,9 @@ class VideoProcessor(QMainWindow):
         self.right_stack.setCurrentIndex(1)
 
     def resizeEvent(self, event):
-            super().resizeEvent(event)
-            # 在窗口大小变化时执行的自定义逻辑
-            self.on_window_resized()
+        super().resizeEvent(event)
+        # 在窗口大小变化时执行的自定义逻辑
+        self.on_window_resized()
 
     def on_window_resized(self):
         # 更新视频帧的显示大小
@@ -990,7 +1021,7 @@ class VideoProcessor(QMainWindow):
             self.current_frame_pos += 1
             
             if ret:
-                self.display_frame(frame, self.original_video)
+                #self.display_frame(frame, self.original_video)
                 if self.processed_video.video_path and self.processed_video.video_cap:
                     self.processed_video.video_cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_pos)
                     ret, processed_frame = self.processed_video.video_cap.read()
@@ -1010,6 +1041,9 @@ class VideoProcessor(QMainWindow):
         bytes_per_line = 3 * width
         q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
         
+        print("display_widget",display_widget.size())
+
+
         # 缩放图像以适应标签大小，同时保持宽高比
         pixmap = QPixmap.fromImage(q_img)
         scaled_pixmap = pixmap.scaled(
@@ -1067,8 +1101,25 @@ class VideoProcessor(QMainWindow):
                     self.progress_bar.setValue(0)
                     self.display_frame(frame, self.processed_video)
 
+
+SCREEN_WIDTH = 0
+SCREEN_HEIGHT = 0
+SCALE_PIXEL = 1.0
+
+def to(aa):
+    #以4K为基准，3840x2160
+    return int(SCALE_PIXEL * aa)
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    # 获取屏幕分辨率
+    screen = app.primaryScreen()
+    size = screen.size()
+    SCREEN_WIDTH = size.width()
+    SCREEN_HEIGHT = size.height()
+    SCALE_PIXEL = (SCREEN_WIDTH * SCREEN_HEIGHT) / (3840 * 2160)
+    print(f"屏幕分辨率：({SCREEN_WIDTH},{SCREEN_HEIGHT}),缩放比例：{SCALE_PIXEL}")
     
     # 设置全局字体
     font = QFont("Microsoft YaHei", 10) 
