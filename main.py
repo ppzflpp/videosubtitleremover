@@ -5,7 +5,7 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint,QSize,QSettings,Q
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QPushButton, QProgressBar, QFileDialog, 
                             QLabel, QFrame, QSizePolicy, QSlider, QSizeGrip,QMessageBox,QStackedWidget,QGroupBox,QRadioButton,QSpacerItem,QLineEdit,QSplitter)
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QMouseEvent, QColor,QFont,QScreen
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QMouseEvent, QColor,QFont,QScreen,QBrush
 
 import cv2
 import numpy as np
@@ -16,6 +16,7 @@ from inpaint.InpaintManager import InpaintManager
 
 import config
 from  inpaint.utils.utils import save_image_with_chinese_path
+from  UI.VideoFrame import VideoFrame
 
 class VideoProcessingThread(QThread):
     """处理视频的线程"""
@@ -53,180 +54,16 @@ class VideoProcessingThread(QThread):
         # 发射信号，通知主线程处理完成
         self.finished.emit(manager.video_out_path, time_cost,100)
 
-class VideoFrame(QLabel):
-    selection_changed = pyqtSignal(QRect)
-    
-    def __init__(self, parent=None, video_path=None,mask_path=None):
-        super().__init__(parent)
-        self.videoProcessor = parent
-        self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet("""
-            background-color: black;
-            border: 2px solid #444;
-            border-radius: 4px;
-        """)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.selection_rect = QRect()
-        self.dragging = False
-        self.start_pos = QPoint()
-        self.current_frame = None
-        self.scale_factor = 1.0
-        self.setMinimumSize(int(SCREEN_WIDTH * 0.1), int(SCREEN_WIDTH * 0.1))
-        self.resize(int(SCREEN_WIDTH * 0.2), int(SCREEN_HEIGHT * 0.4))
-        self.video_path = None
-        self.video_cap = None
-        self.frame_count = 0
-        self.fps = 0
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        # 重新设置内容的大小
-        if self.current_frame is not None:
-            self.set_frame(self.current_frame)
-
-    def set_frame(self, frame):
-        self.current_frame = frame
-        if frame is not None:
-            height, width = frame.shape[:2]
-            bytes_per_line = 3 * width
-            q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(q_img)
-            scaled_pixmap = pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.setPixmap(scaled_pixmap)
-        else:
-            # 创建一个纯黑色的 QImage
-            black_image = QImage(self.width(), self.height(), QImage.Format_RGB32)
-            black_image.fill(Qt.black)
-            pixmap = QPixmap.fromImage(black_image)
-            self.setPixmap(pixmap)
-    
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton and self.pixmap():
-            self.dragging = True
-            self.start_pos = event.pos()
-            self.selection_rect = QRect(self.start_pos, QSize())
-            self.update()
-    
-    def mouseMoveEvent(self, event):
-        if self.dragging and self.pixmap():
-            # 计算矩形的左上角和右下角坐标
-            top_left = QPoint(min(self.start_pos.x(), event.pos().x()), 
-                            min(self.start_pos.y(), event.pos().y()))
-            bottom_right = QPoint(max(self.start_pos.x(), event.pos().x()), 
-                                max(self.start_pos.y(), event.pos().y()))
-            self.selection_rect = QRect(top_left, bottom_right)
-            self.update()
-    
-    def mouseReleaseEvent(self, event):
-        if self.dragging and self.pixmap():
-            self.dragging = False
-            if self.selection_rect.width() > 10 and self.selection_rect.height() > 10:
-                # 打印矩形框的坐标
-                print(f"矩形框坐标: x={self.selection_rect.x()}, y={self.selection_rect.y()}, "
-                    f"width={self.selection_rect.width()}, height={self.selection_rect.height()}")
-
-                # 生成蒙版图
-                if self.current_frame is not None:
-                    original_height, original_width = self.current_frame.shape[:2]
-                    display_width = self.pixmap().width()
-                    display_height = self.pixmap().height()
-
-                    # 计算缩放比例
-                    scale_x = original_width / display_width
-                    scale_y = original_height / display_height
-
-                    # 计算偏移量（如果视频帧被居中显示）
-                    offset_x = (self.width() - display_width) // 2
-                    offset_y = (self.height() - display_height) // 2
-
-                    # 将显示区域的坐标转换为原始视频帧的坐标
-                    x = int((self.selection_rect.x() - offset_x) * scale_x)
-                    y = int((self.selection_rect.y() - offset_y) * scale_y)
-                    w = int(self.selection_rect.width() * scale_x)
-                    h = int(self.selection_rect.height() * scale_y)
-
-                    # 确保坐标在视频帧范围内
-                    x = max(0, min(x, original_width))
-                    y = max(0, min(y, original_height))
-                    w = max(0, min(w, original_width - x))
-                    h = max(0, min(h, original_height - y))
-
-                    # 创建蒙版图
-                    mask = np.zeros((original_height, original_width), dtype=np.uint8)
-                    mask[y:y+h, x:x+w] = 255  # 将矩形区域设置为白色
-
-                    # 获取视频文件路径和名称
-                    video_path = self.videoProcessor.video_path  # 从父窗口获取视频路径
-                    video_dir = os.path.dirname(video_path)
-                    video_name = os.path.basename(video_path).split('.')[0]
-                    mask_path = os.path.join(video_dir, f"{video_name}_mask.png")
-                  
-                    # 确保路径使用正斜杠
-                    self.save_mask(mask,mask_path)
-
-            else:
-                self.selection_rect = QRect()
-            self.update()
-    
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.selection_rect and self.pixmap():
-            painter = QPainter(self)
-            painter.setPen(QPen(QColor(255, 0, 0), 2, Qt.SolidLine))
-            painter.drawRect(self.selection_rect)
-    
-    def save_mask(self,mask, mask_path):
-        # 确保目录存在
-        os.makedirs(os.path.dirname(mask_path), exist_ok=True)
-
-        # 检查权限
-        if not os.access(os.path.dirname(mask_path), os.W_OK):
-            print(f"没有权限写入路径: {os.path.dirname(mask_path)}")
-            return
-
-        # 检查蒙版图数据
-        if mask is None or mask.size == 0:
-            print("蒙版图为空")
-            return
-
-        if mask.dtype != np.uint8:
-            print(f"蒙版图数据类型错误: {mask.dtype}")
-            return
-
-        # 检查文件名
-        if not mask_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
-            print(f"文件名没有有效的扩展名: {mask_path}")
-            return
-
-
-        success = save_image_with_chinese_path(mask,mask_path)
-        if success:
-            self.videoProcessor.mask_path = mask_path
-            print(f"蒙版图已成功保存到: {mask_path}")
-        else : 
-            print(f"保存蒙版图失败: {mask_path}")
-
 
 class VideoProcessor(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("飞鱼去字幕")
-        self.setGeometry(int(SCREEN_WIDTH * 0.2), int(SCREEN_HEIGHT * 0.2), int(SCREEN_WIDTH * 0.2), int(SCREEN_HEIGHT * 0.4))
-        self.settings = QSettings("VideoSubTitleRemover", "dragon")
-        self.last_opened_path = self.settings.value("last_opened_path", "")
-        self.save_folder = self.settings.value("SaveFolder", "")
-        self.video_path = None
-        self.mask_path = None
-        self.processing_thread = None
-        self.file_queue = []  # 新增文件队列
-        self.is_processing_queue = False  # 新增队列处理标志
-        self.totalFiles = len(self.file_queue)
-        self.current_algo_mode = self.settings.value("InpaintMode", "STTN")  # 默认 STTN
+        # 仅设置窗口的位置，不设置宽度和高度
+        self.setGeometry(int(SCREEN_WIDTH * 0.2), int(SCREEN_HEIGHT * 0.2), 0, 0)
 
-        # 添加计时相关变量
-        self.process_start_time = None
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_time_cost)
+
+        self.initParams()
 
         self.printSomething()
         
@@ -305,24 +142,44 @@ class VideoProcessor(QMainWindow):
         # 添加到主布局
         main_layout.addWidget(splitter)
         
-        # 其他初始化
-        self.play_timer = QTimer(self)
-        self.play_timer.timeout.connect(self.update_frames)
-        self.is_playing = False
-        
+
+
+    def initParams(self):
+
         # 视频相关变量
-        self.video_cap = None
+        self.original_video = None
+        self.processed_video = None
         self.frame_count = 0
         self.fps = 0
         self.current_frame_pos = 0
         self.selection_area = None
-        self.play_timer = QTimer(self)
-        self.play_timer.timeout.connect(self.update_frames)
         self.original_width = 0
         self.original_height = 0
         self.is_playing = False
         self.video_duration = 0
         self.slider_dragging = False
+
+        self.settings = QSettings("VideoSubTitleRemover", "dragon")
+        self.last_opened_path = self.settings.value("last_opened_path", "")
+        self.save_folder = self.settings.value("SaveFolder", "")
+        self.video_path = None
+        self.mask_path = None
+        self.processing_thread = None
+        self.file_queue = []  # 新增文件队列
+        self.is_processing_queue = False  # 新增队列处理标志
+        self.totalFiles = len(self.file_queue)
+        self.current_algo_mode = self.settings.value("InpaintMode", "STTN")  # 默认 STTN
+
+        #用于更新视频播放进度条计时器
+        self.play_timer = QTimer(self)
+        self.play_timer.timeout.connect(self.update_frames)
+        self.is_playing = False
+
+        # 用于更新处理时长计时器
+        self.process_start_time = None
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_time_cost)
+        
 
     def setup_home_ui(self):
         """首页UI - 原有内容移到这里"""
@@ -336,11 +193,12 @@ class VideoProcessor(QMainWindow):
         video_area.setSpacing(to(20))
         
         # 原始视频
-        self.original_video = VideoFrame(parent=self)
+        self.original_video = VideoFrame(parent=self,screenWidth=SCREEN_WIDTH,screenHeight=SCREEN_HEIGHT)
+        self.original_video.setDrawable(True)
         video_area.addWidget(self.original_video)
         
         # 处理后视频
-        self.processed_video = VideoFrame(parent=self)
+        self.processed_video = VideoFrame(parent=self,screenWidth=SCREEN_WIDTH,screenHeight=SCREEN_HEIGHT)
         video_area.addWidget(self.processed_video)
 
         video_area.setStretch(0, 1)
@@ -403,7 +261,7 @@ class VideoProcessor(QMainWindow):
         # 让 mode_area 居中显示在 self.mode_frame 中
         mode_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # 将 self.mode_frame 添加到 self.original_video 的布局中
+        # 将 self.mode_frame 添加到 self.original_video的布局中
         self.original_video_layout = QVBoxLayout(self.original_video)
         self.original_video_layout.setContentsMargins(0, 0, 0, 0)
         self.original_video_layout.setSpacing(0)
@@ -777,7 +635,7 @@ class VideoProcessor(QMainWindow):
 
     def play_video(self):
         """播放视频"""
-        if self.video_cap and not self.is_playing:
+        if self.original_video.video_cap and not self.is_playing:
             self.is_playing = True
             self.play_btn.setText("暂停")
             self.play_timer.start(int(1000 / self.fps))
@@ -791,11 +649,11 @@ class VideoProcessor(QMainWindow):
 
     def seek_video(self, position):
         """跳转到指定位置"""
-        if self.video_cap and self.slider_dragging:
+        if self.original_video.video_cap and self.slider_dragging:
             frame_pos = int(position * self.frame_count / 100)
-            self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+            self.original_video.video_cap .set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
             self.current_frame_pos = frame_pos
-            ret, frame = self.video_cap.read()
+            ret, frame = self.original_video.video_cap.read()
             if ret:
                 self.display_frame(frame, self.original_video)
                 if self.processed_video.video_path and self.processed_video.video_cap:
@@ -807,7 +665,7 @@ class VideoProcessor(QMainWindow):
 
     def update_progress(self):
         """更新进度显示"""
-        if self.video_cap and not self.slider_dragging:
+        if self.original_video.video_cap and not self.slider_dragging:
             # 更新进度滑块
             progress = int(self.current_frame_pos * 100 / self.frame_count)
             if self.current_frame_pos == self.frame_count -1:
@@ -837,6 +695,7 @@ class VideoProcessor(QMainWindow):
     def process_video(self):
         # 禁用控件
         self.set_controls_enabled(False)
+        self.mask_path = self.original_video.generate_and_save_mask()
 
         #如果这个条件成立，说明是用户没有重新选择视频，直接使用上次的视频，那默认把之前的第一个放入队列，保存程序统一性
         if self.video_path and (not self.file_queue):
@@ -846,7 +705,6 @@ class VideoProcessor(QMainWindow):
         self.begin_process()
 
     def begin_process(self):
-
         if not self.video_path or not self.mask_path:
             self.set_controls_enabled(True)
             QMessageBox.information(self, "信息", "请选择文件或选择去字幕区域")
@@ -854,6 +712,7 @@ class VideoProcessor(QMainWindow):
 
         #加载第一个要处理的视频
         if self.file_queue : 
+            self.original_video.setEnabled(False)
             self.set_controls_enabled(False)
             # 重置进度条
             self.progress_bar.setValue(0)
@@ -868,6 +727,7 @@ class VideoProcessor(QMainWindow):
 
             print(f"共{self.totalFiles}个文件，正在处理第{self.totalFiles - len(self.file_queue)}个文件，文件名：{next_file}")
 
+            self.releaseResource(clearSections=False)
             self.load_preview_file(next_file)
 
             self.progress_bar.setValue(2)
@@ -875,6 +735,7 @@ class VideoProcessor(QMainWindow):
 
             self.subtitle_processing(next_file,self.save_folder,self.mask_path)
         else:
+            self.original_video.setEnabled(True)
             self.set_controls_enabled(True)
             """处理完成时调用"""
             self.timer.stop()
@@ -923,10 +784,13 @@ class VideoProcessor(QMainWindow):
                 message_box.close()
 
 
-    def releaseResource(self):
-        if self.video_cap:
-            self.video_cap.release() 
-            self.video_cap = None
+    def releaseResource(self,clearSections = True):
+        if self.original_video.video_cap :
+            self.original_video.video_cap .release() 
+            self.original_video.video_cap = None
+            if clearSections:
+                self.original_video.clear_selections()
+
         
         if self.processed_video.video_cap:
             print("releaseResource,processed_video")
@@ -953,6 +817,7 @@ class VideoProcessor(QMainWindow):
             self.totalFiles = len(self.file_queue)
             
             # 加载第一个文件预览
+            self.releaseResource(clearSections=True)
             self.load_preview_file(filenames[0])
             # 启用控件
             self.set_controls_enabled(True)
@@ -976,16 +841,15 @@ class VideoProcessor(QMainWindow):
         """加载单个文件用于预览"""
         self.original_video.video_path = filename
         self.processed_video.video_path = filename
-        self.releaseResource()
 
-        self.video_cap = cv2.VideoCapture(filename)
-        if self.video_cap.isOpened():
-            self.frame_count = int(self.video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            self.fps = self.video_cap.get(cv2.CAP_PROP_FPS)
+        self.original_video.video_cap = cv2.VideoCapture(filename)
+        if self.original_video.video_cap.isOpened():
+            self.frame_count = int(self.original_video.video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.fps = self.original_video.video_cap.get(cv2.CAP_PROP_FPS)
             self.current_frame_pos = 0
             
             # 读取第一帧
-            ret, frame = self.video_cap.read()
+            ret, frame = self.original_video.video_cap.read()
             if ret:
                 # 保存原始视频尺寸
                 self.original_height, self.original_width = frame.shape[:2]
@@ -1016,12 +880,12 @@ class VideoProcessor(QMainWindow):
 
     def update_frames(self):
         """更新视频帧显示"""
-        if self.video_cap and self.video_cap.isOpened() and self.is_playing:
-            ret, frame = self.video_cap.read()
+        if self.original_video.video_cap and self.original_video.video_cap.isOpened() and self.is_playing:
+            ret, frame = self.original_video.video_cap.read()
             self.current_frame_pos += 1
             
             if ret:
-                #self.display_frame(frame, self.original_video)
+                self.display_frame(frame, self.original_video)
                 if self.processed_video.video_path and self.processed_video.video_cap:
                     self.processed_video.video_cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_pos)
                     ret, processed_frame = self.processed_video.video_cap.read()
@@ -1030,29 +894,14 @@ class VideoProcessor(QMainWindow):
                 self.update_progress()
             else:
                 # 视频结束，回到开头
-                self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                self.original_video.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 self.current_frame_pos = 0
                 self.pause_video()
     
     def display_frame(self, frame, display_widget):
         """显示视频帧"""
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        height, width = frame.shape[:2]
-        bytes_per_line = 3 * width
-        q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
-        
-        print("display_widget",display_widget.size())
-
-
-        # 缩放图像以适应标签大小，同时保持宽高比
-        pixmap = QPixmap.fromImage(q_img)
-        scaled_pixmap = pixmap.scaled(
-            display_widget.size(), 
-            Qt.KeepAspectRatio, 
-            Qt.SmoothTransformation
-        )
-        display_widget.setPixmap(scaled_pixmap)
-        display_widget.current_frame = frame
+        display_widget.set_frame(frame)
 
     def set_controls_enabled(self, enabled):
         """设置控件启用状态"""
@@ -1091,10 +940,6 @@ class VideoProcessor(QMainWindow):
             self.processed_video.video_path = output_path
             self.processed_video.video_cap = cv2.VideoCapture(output_path)
             if self.processed_video.video_cap.isOpened():
-                self.processed_video.frame_count = int(
-                    self.processed_video.video_cap.get(cv2.CAP_PROP_FRAME_COUNT)
-                )
-                self.processed_video.fps = self.processed_video.video_cap.get(cv2.CAP_PROP_FPS)
                 self.processed_video.video_cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_pos)
                 ret, frame = self.processed_video.video_cap.read()
                 if ret:
